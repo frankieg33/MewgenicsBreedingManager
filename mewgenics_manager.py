@@ -588,6 +588,18 @@ class Cat:
             sex_code,
             _normalize_gender(raw_gender),
         )
+
+        # Try to read sexual orientation (may be stored after gender)
+        saved_pos = r.pos
+        try:
+            potential_orientation = r.str()
+            if potential_orientation and potential_orientation.lower() in ['straight', 'gay', 'lesbian', 'bi', 'bisexual']:
+                self.sexual_orientation = potential_orientation.lower()
+            else:
+                r.seek(saved_pos)
+        except Exception:
+            r.seek(saved_pos)
+
         r.f64()
 
         self.stat_base = [r.u32() for _ in range(7)]
@@ -603,6 +615,7 @@ class Cat:
         self.aggression  = None   # None = unknown
         self.libido      = None
         self.inbredness  = None
+        self.sexual_orientation = None  # None = unknown
 
         # Relationship scaffolds — resolved by parse_save after all cats loaded.
         self._lover_uids: list[int] = []
@@ -882,6 +895,22 @@ def can_breed(a: Cat, b: Cat) -> tuple[bool, str]:
     if ga == "?" or gb == "?":
         return True, ""
     if ga != gb and {ga, gb} == {"male", "female"}:
+        # Check sexual orientation compatibility
+        oa = (a.sexual_orientation or "").strip().lower()
+        ob = (b.sexual_orientation or "").strip().lower()
+
+        # Check if orientations are compatible
+        if oa and ob:
+            # Both must be compatible with opposite sex
+            if ga == "male" and oa in ["gay"] and gb == "female":
+                return False, "Male cat is gay — incompatible with females"
+            if ga == "female" and oa in ["lesbian"] and gb == "male":
+                return False, "Female cat is lesbian — incompatible with males"
+            if gb == "male" and ob in ["gay"] and ga == "female":
+                return False, "Male cat is gay — incompatible with females"
+            if gb == "female" and ob in ["lesbian"] and ga == "male":
+                return False, "Female cat is lesbian — incompatible with males"
+
         return True, ""
     # Same known sex
     if ga == "female" and gb == "female":
@@ -1082,19 +1111,20 @@ def find_save_files() -> list[str]:
 
 # ── Qt table model ────────────────────────────────────────────────────────────
 
-COLUMNS   = ["Name", "♀/♂", "Room", "Status"] + STAT_NAMES + ["Sum", "Abilities", "Mutations", "Risk%", "Gen", "Source", "Inbr"]
+COLUMNS   = ["Name", "♀/♂", "Orient", "Room", "Status"] + STAT_NAMES + ["Sum", "Abilities", "Mutations", "Risk%", "Gen", "Source", "Inbr"]
 COL_NAME  = 0
 COL_GEN   = 1
-COL_ROOM  = 2
-COL_STAT  = 3
-STAT_COLS = list(range(4, 11))   # STR … LCK  (indices 4–10)
-COL_SUM   = 11
-COL_ABIL  = 12
-COL_MUTS  = 13
-COL_REL   = 14
-COL_AGE   = 15   # generation depth
-COL_SRC   = 16
-COL_INB   = 17
+COL_ORIENT = 2
+COL_ROOM  = 3
+COL_STAT  = 4
+STAT_COLS = list(range(5, 12))   # STR … LCK  (indices 5–11)
+COL_SUM   = 12
+COL_ABIL  = 13
+COL_MUTS  = 14
+COL_REL   = 15
+COL_AGE   = 16   # generation depth
+COL_SRC   = 17
+COL_INB   = 18
 
 # Fixed pixel widths for narrow columns
 _W_STATUS = 62
@@ -1169,10 +1199,15 @@ class CatTableModel(QAbstractTableModel):
         if role == Qt.DisplayRole:
             if col == COL_NAME: return cat.name
             if col == COL_GEN:  return cat.gender_display
+            if col == COL_ORIENT:
+                if cat.sexual_orientation:
+                    abbrev = {"straight": "Het", "gay": "Gay", "lesbian": "Les", "bi": "Bi", "bisexual": "Bi"}
+                    return abbrev.get(cat.sexual_orientation, cat.sexual_orientation[:3].capitalize())
+                return "—"
             if col == COL_ROOM: return cat.room_display
             if col == COL_STAT: return STATUS_ABBREV.get(cat.status, cat.status)
             if col in STAT_COLS:
-                return str(cat.base_stats[STAT_NAMES[col - 4]])
+                return str(cat.base_stats[STAT_NAMES[col - 5]])
             if col == COL_SUM:
                 return str(sum(cat.base_stats.values()))
             if col == COL_MUTS:
@@ -1200,7 +1235,7 @@ class CatTableModel(QAbstractTableModel):
 
         elif role == Qt.UserRole:
             if col in STAT_COLS:
-                return cat.base_stats[STAT_NAMES[col - 4]]
+                return cat.base_stats[STAT_NAMES[col - 5]]
             if col == COL_SUM:
                 return sum(cat.base_stats.values())
             if col == COL_REL:
@@ -1219,7 +1254,7 @@ class CatTableModel(QAbstractTableModel):
             if compat == 'risky' and not self._show_lineage:
                 compat = 'ok'
             if col in STAT_COLS:
-                base_c = STAT_COLORS.get(cat.base_stats[STAT_NAMES[col - 4]], QColor(100, 100, 115))
+                base_c = STAT_COLORS.get(cat.base_stats[STAT_NAMES[col - 5]], QColor(100, 100, 115))
                 if compat == 'incompatible':
                     return QBrush(QColor(base_c.red() // 4, base_c.green() // 4, base_c.blue() // 4))
                 if compat == 'risky':
@@ -1262,7 +1297,7 @@ class CatTableModel(QAbstractTableModel):
 
         elif role == Qt.ToolTipRole:
             if col in STAT_COLS:
-                n = STAT_NAMES[col - 4]
+                n = STAT_NAMES[col - 5]
                 b = cat.base_stats[n]
                 t = cat.total_stats[n]
                 extra = f"  (+{t - b})" if t != b else ""
@@ -1416,7 +1451,12 @@ class CatDetailPanel(QWidget):
         nl = QLabel(cat.name); nl.setStyleSheet(_NAME_STYLE)
         gl = QLabel(cat.gender_display)
         gl.setStyleSheet("color:#7ac; font-size:12px; font-weight:bold;")
-        name_row.addWidget(nl); name_row.addWidget(gl); name_row.addStretch()
+        name_row.addWidget(nl); name_row.addWidget(gl)
+        if cat.sexual_orientation:
+            orient_label = QLabel(f"({cat.sexual_orientation.capitalize()})")
+            orient_label.setStyleSheet("color:#9a9; font-size:10px;")
+            name_row.addWidget(orient_label)
+        name_row.addStretch()
         id_col.addLayout(name_row)
         id_col.addWidget(QLabel(cat.room_display or "—", styleSheet=_META_STYLE))
 
@@ -1559,6 +1599,10 @@ class CatDetailPanel(QWidget):
             gl = QLabel(cat.gender_display)
             gl.setStyleSheet("color:#7ac; font-size:12px; font-weight:bold;")
             hdr.addWidget(gl)
+            if cat.sexual_orientation:
+                ol = QLabel(f"({cat.sexual_orientation[:3].capitalize()})")
+                ol.setStyleSheet("color:#9a9; font-size:10px;")
+                hdr.addWidget(ol)
             rl = QLabel(f"  {cat.room_display}" if cat.room_display else "")
             rl.setStyleSheet(_META_STYLE)
             hdr.addWidget(rl)
@@ -2526,185 +2570,121 @@ class RoomOptimizerView(QWidget):
         females.sort(key=lambda c: sum(c.total_stats.values()), reverse=True)
         unknown.sort(key=lambda c: sum(c.total_stats.values()), reverse=True)
 
-        available_rooms = list(ROOM_DISPLAY.keys())
-        room_assignments = {room: {'males': [], 'females': [], 'unknown': []} for room in available_rooms}
+        # Priority rooms + fallback
+        priority_rooms = ["Priority 1", "Priority 2", "Priority 3", "Priority 4"]
+        fallback_room = "Fallback"
+        all_rooms = priority_rooms + [fallback_room]
+        room_assignments = {room: [] for room in all_rooms}
 
-        # Strategy: Distribute cats across rooms to minimize inbreeding within each room
-        # while maximizing overall stats quality
+        # Strategy: Find best breeding pairs and distribute to priority rooms
+        # Maximize expected offspring quality while respecting risk constraints
 
-        # Build family groups - cats that share ancestors should be in different rooms
-        def get_family_group_id(cat):
-            """Get a unique identifier for cat's family lineage."""
-            ancestors = []
-            if cat.parent_a:
-                ancestors.append(cat.parent_a.db_key)
-            if cat.parent_b:
-                ancestors.append(cat.parent_b.db_key)
-            # Include grandparents too
-            for p in [cat.parent_a, cat.parent_b]:
-                if p:
-                    if p.parent_a:
-                        ancestors.append(p.parent_a.db_key)
-                    if p.parent_b:
-                        ancestors.append(p.parent_b.db_key)
-            return tuple(sorted(ancestors)) if ancestors else None
+        # Find all viable pairs and score them
+        all_cats = males + females + unknown
+        pairs_with_scores = []
 
-        # Assign cats to rooms using round-robin + family separation strategy
-        room_idx = 0
-        max_cats_per_room = 6
+        for i, cat_a in enumerate(all_cats):
+            for cat_b in all_cats[i+1:]:
+                ok, _ = can_breed(cat_a, cat_b)
+                if not ok:
+                    continue
 
-        # Process each gender separately to ensure good distribution
-        for gender_list, gender_key in [(males, 'males'), (females, 'females'), (unknown, 'unknown')]:
-            # Group cats by family
-            family_groups = {}
-            no_family = []
+                risk = risk_percent(cat_a, cat_b)
+                if risk > max_risk:
+                    continue
 
-            for cat in gender_list:
-                family_id = get_family_group_id(cat)
-                if family_id:
-                    if family_id not in family_groups:
-                        family_groups[family_id] = []
-                    family_groups[family_id].append(cat)
-                else:
-                    no_family.append(cat)
+                # Quality score: average stats with penalty for risk
+                avg_stats = (sum(cat_a.total_stats.values()) + sum(cat_b.total_stats.values())) / 2
+                quality = avg_stats * (1.0 - risk / 200.0)
 
-            # First, distribute family groups across different rooms
-            for family_id, family_cats in family_groups.items():
-                for cat in family_cats:
-                    # Find a room that doesn't have this family yet
-                    placed = False
-                    for attempt in range(len(available_rooms)):
-                        room = available_rooms[room_idx % len(available_rooms)]
+                pairs_with_scores.append({
+                    'cat_a': cat_a,
+                    'cat_b': cat_b,
+                    'risk': risk,
+                    'avg_stats': avg_stats,
+                    'quality': quality
+                })
 
-                        # Check if this room is suitable
-                        room_data = room_assignments[room]
-                        total_in_room = len(room_data['males']) + len(room_data['females']) + len(room_data['unknown'])
+        # Sort pairs by quality (best first)
+        pairs_with_scores.sort(key=lambda p: p['quality'], reverse=True)
 
-                        if total_in_room < max_cats_per_room:
-                            # Check if any cat in this room shares family with current cat
-                            has_family_conflict = False
-                            has_risk_conflict = False
+        # Greedy assignment: place best pairs in priority rooms
+        assigned_cats = set()
+        max_cats_per_priority_room = 6
 
-                            for existing_cat in room_data['males'] + room_data['females'] + room_data['unknown']:
-                                if get_family_group_id(existing_cat) == family_id:
-                                    has_family_conflict = True
-                                    break
+        for pair in pairs_with_scores:
+            cat_a = pair['cat_a']
+            cat_b = pair['cat_b']
 
-                                # Check inbreeding risk if they can breed
-                                ok, _ = can_breed(cat, existing_cat)
-                                if ok:
-                                    risk = risk_percent(cat, existing_cat)
-                                    if risk > max_risk:
-                                        has_risk_conflict = True
-                                        break
+            # Skip if either cat already assigned
+            if cat_a.db_key in assigned_cats or cat_b.db_key in assigned_cats:
+                continue
 
-                            if not has_family_conflict and not has_risk_conflict:
-                                room_data[gender_key].append(cat)
-                                placed = True
-                                room_idx += 1
-                                break
+            # Try to place in a priority room
+            placed = False
+            for room in priority_rooms:
+                room_cats = room_assignments[room]
 
-                        room_idx += 1
+                # Check if room has space
+                if len(room_cats) >= max_cats_per_priority_room:
+                    continue
 
-                    # If couldn't place due to conflicts, put in least risky room
-                    if not placed:
-                        # Find room with lowest average risk for this cat
-                        best_room = None
-                        best_avg_risk = float('inf')
+                # Check compatibility with existing cats in room
+                can_place_both = True
+                for existing_cat in room_cats:
+                    # Check cat_a compatibility
+                    ok_a, _ = can_breed(cat_a, existing_cat)
+                    if ok_a:
+                        risk_a = risk_percent(cat_a, existing_cat)
+                        if risk_a > max_risk:
+                            can_place_both = False
+                            break
 
-                        for r in available_rooms:
-                            rd = room_assignments[r]
-                            room_cats = rd['males'] + rd['females'] + rd['unknown']
+                    # Check cat_b compatibility
+                    ok_b, _ = can_breed(cat_b, existing_cat)
+                    if ok_b:
+                        risk_b = risk_percent(cat_b, existing_cat)
+                        if risk_b > max_risk:
+                            can_place_both = False
+                            break
 
-                            if len(room_cats) >= max_cats_per_room:
-                                continue
+                if can_place_both and len(room_cats) + 2 <= max_cats_per_priority_room:
+                    room_assignments[room].extend([cat_a, cat_b])
+                    assigned_cats.add(cat_a.db_key)
+                    assigned_cats.add(cat_b.db_key)
+                    placed = True
+                    break
 
-                            # Calculate average risk with cats in this room
-                            risks = []
-                            for existing_cat in room_cats:
-                                ok, _ = can_breed(cat, existing_cat)
-                                if ok:
-                                    risks.append(risk_percent(cat, existing_cat))
+            if not placed:
+                # Try placing individually in priority rooms
+                for cat in [cat_a, cat_b]:
+                    if cat.db_key in assigned_cats:
+                        continue
 
-                            avg_risk = sum(risks) / len(risks) if risks else 0
+                    for room in priority_rooms:
+                        room_cats = room_assignments[room]
+                        if len(room_cats) >= max_cats_per_priority_room:
+                            continue
 
-                            if avg_risk < best_avg_risk:
-                                best_avg_risk = avg_risk
-                                best_room = r
-
-                        if best_room:
-                            room_assignments[best_room][gender_key].append(cat)
-                        else:
-                            # Last resort: put in least full room
-                            least_full_room = min(available_rooms,
-                                key=lambda r: len(room_assignments[r]['males']) +
-                                             len(room_assignments[r]['females']) +
-                                             len(room_assignments[r]['unknown']))
-                            room_assignments[least_full_room][gender_key].append(cat)
-
-            # Then distribute cats without family (strays) - check risk too
-            for cat in no_family:
-                placed = False
-
-                # Try to find a room with acceptable risk
-                for attempt in range(len(available_rooms)):
-                    room = available_rooms[room_idx % len(available_rooms)]
-                    room_data = room_assignments[room]
-                    total_in_room = len(room_data['males']) + len(room_data['females']) + len(room_data['unknown'])
-
-                    if total_in_room < max_cats_per_room:
-                        # Check risk with existing cats
-                        has_risk_conflict = False
-                        for existing_cat in room_data['males'] + room_data['females'] + room_data['unknown']:
+                        # Check compatibility
+                        compatible = True
+                        for existing_cat in room_cats:
                             ok, _ = can_breed(cat, existing_cat)
                             if ok:
                                 risk = risk_percent(cat, existing_cat)
                                 if risk > max_risk:
-                                    has_risk_conflict = True
+                                    compatible = False
                                     break
 
-                        if not has_risk_conflict:
-                            room_data[gender_key].append(cat)
-                            placed = True
-                            room_idx += 1
+                        if compatible:
+                            room_assignments[room].append(cat)
+                            assigned_cats.add(cat.db_key)
                             break
 
-                    room_idx += 1
-
-                # If couldn't place, find room with lowest average risk
-                if not placed:
-                    best_room = None
-                    best_avg_risk = float('inf')
-
-                    for r in available_rooms:
-                        rd = room_assignments[r]
-                        room_cats = rd['males'] + rd['females'] + rd['unknown']
-
-                        if len(room_cats) >= max_cats_per_room:
-                            continue
-
-                        # Calculate average risk with cats in this room
-                        risks = []
-                        for existing_cat in room_cats:
-                            ok, _ = can_breed(cat, existing_cat)
-                            if ok:
-                                risks.append(risk_percent(cat, existing_cat))
-
-                        avg_risk = sum(risks) / len(risks) if risks else 0
-
-                        if avg_risk < best_avg_risk:
-                            best_avg_risk = avg_risk
-                            best_room = r
-
-                    if best_room:
-                        room_assignments[best_room][gender_key].append(cat)
-                    else:
-                        # Last resort: least full room
-                        least_full_room = min(available_rooms,
-                            key=lambda r: len(room_assignments[r]['males']) +
-                                         len(room_assignments[r]['females']) +
-                                         len(room_assignments[r]['unknown']))
-                        room_assignments[least_full_room][gender_key].append(cat)
+        # Put unassigned cats in fallback room
+        for cat in all_cats:
+            if cat.db_key not in assigned_cats:
+                room_assignments[fallback_room].append(cat)
 
         # Display results
         self._table.setRowCount(0)
@@ -2712,9 +2692,8 @@ class RoomOptimizerView(QWidget):
         total_pairs = 0
         total_assigned = 0
 
-        for room in available_rooms:
-            room_data = room_assignments[room]
-            cats_in_room = room_data['males'] + room_data['females'] + room_data['unknown']
+        for room in all_rooms:
+            cats_in_room = room_assignments[room]
 
             if not cats_in_room:
                 continue
@@ -2738,9 +2717,11 @@ class RoomOptimizerView(QWidget):
 
             self._table.insertRow(row_idx)
 
-            # Room name
-            room_item = QTableWidgetItem(ROOM_DISPLAY.get(room, room))
+            # Room name with special styling for fallback
+            room_item = QTableWidgetItem(room)
             room_item.setTextAlignment(Qt.AlignCenter)
+            if room == fallback_room:
+                room_item.setForeground(QBrush(QColor(150, 150, 150)))
 
             # Cats to place
             cat_names = [f"{c.name} ({c.gender_display})" for c in cats_in_room]
