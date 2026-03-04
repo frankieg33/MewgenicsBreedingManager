@@ -1167,7 +1167,12 @@ class CatTableModel(QAbstractTableModel):
         col = index.column()
 
         if role == Qt.DisplayRole:
-            if col == COL_NAME: return cat.name
+            if col == COL_NAME:
+                # Add exclusion indicator
+                mw = QApplication.instance().activeWindow()
+                if mw and hasattr(mw, '_excluded_from_breeding') and cat.db_key in mw._excluded_from_breeding:
+                    return f"⊗ {cat.name}"
+                return cat.name
             if col == COL_GEN:  return cat.gender_display
             if col == COL_ROOM: return cat.room_display
             if col == COL_STAT: return STATUS_ABBREV.get(cat.status, cat.status)
@@ -1261,6 +1266,10 @@ class CatTableModel(QAbstractTableModel):
                 return QBrush(QColor(255, 255, 255))
 
         elif role == Qt.ToolTipRole:
+            if col == COL_NAME:
+                mw = QApplication.instance().activeWindow()
+                if mw and hasattr(mw, '_excluded_from_breeding') and cat.db_key in mw._excluded_from_breeding:
+                    return f"{cat.name}\n⊗ Excluded from breeding calculations"
             if col in STAT_COLS:
                 n = STAT_NAMES[col - 4]
                 b = cat.base_stats[n]
@@ -1458,6 +1467,10 @@ class CatDetailPanel(QWidget):
                         mw._table.scrollTo(proxy_idx)
                     break
 
+        # Buttons row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+
         if self._show_lineage:
             tree_btn = QPushButton("Family Tree…")
             tree_btn.setStyleSheet(
@@ -1465,7 +1478,33 @@ class CatDetailPanel(QWidget):
                 " padding:3px 8px; border-radius:4px; font-size:10px; }"
                 "QPushButton:hover { background:#131328; }")
             tree_btn.clicked.connect(lambda: LineageDialog(cat, self, navigate_fn=_navigate).exec())
-            id_col.addWidget(tree_btn)
+            btn_row.addWidget(tree_btn)
+
+        # Exclude from breeding toggle button
+        mw = self.window()
+        is_excluded = cat.db_key in mw._excluded_from_breeding
+        exclude_btn = QPushButton("✓ Excluded" if is_excluded else "Exclude from Breeding")
+        exclude_btn.setStyleSheet(
+            "QPushButton { color:#c55; background:transparent; border:1px solid #452020;"
+            " padding:3px 8px; border-radius:4px; font-size:10px; }"
+            "QPushButton:hover { background:#251010; }" if not is_excluded else
+            "QPushButton { color:#5a5; background:#152515; border:1px solid #254520;"
+            " padding:3px 8px; border-radius:4px; font-size:10px; }"
+            "QPushButton:hover { background:#203020; }")
+
+        def toggle_exclude():
+            if cat.db_key in mw._excluded_from_breeding:
+                mw._excluded_from_breeding.remove(cat.db_key)
+            else:
+                mw._excluded_from_breeding.add(cat.db_key)
+            # Refresh detail panel to update button state
+            self.show_cats([cat])
+
+        exclude_btn.clicked.connect(toggle_exclude)
+        btn_row.addWidget(exclude_btn)
+
+        btn_row.addStretch()
+        id_col.addLayout(btn_row)
         id_col.addStretch()
         root.addLayout(id_col)
 
@@ -2483,13 +2522,19 @@ class RoomOptimizerView(QWidget):
 
         _enforce_min_font_in_widget_tree(self)
 
-    def set_cats(self, cats: list[Cat]):
+    def set_cats(self, cats: list[Cat], excluded_keys: set[int] = None):
         self._cats = cats
-        self._summary.setText(f"{len([c for c in cats if c.status != 'Gone'])} alive cats available")
+        self._excluded_keys = excluded_keys or set()
+        alive_count = len([c for c in cats if c.status != 'Gone'])
+        excluded_count = len([c for c in cats if c.status != 'Gone' and c.db_key in self._excluded_keys])
+        if excluded_count > 0:
+            self._summary.setText(f"{alive_count} alive cats available ({excluded_count} excluded from breeding)")
+        else:
+            self._summary.setText(f"{alive_count} alive cats available")
 
     def _calculate_optimal_distribution(self):
         """Calculate and display optimal room distribution."""
-        alive_cats = [c for c in self._cats if c.status != "Gone"]
+        alive_cats = [c for c in self._cats if c.status != "Gone" and c.db_key not in self._excluded_keys]
 
         # Get minimum stats filter
         min_stats = 0
@@ -2782,6 +2827,7 @@ class MainWindow(QMainWindow):
         self._tree_view: Optional[FamilyTreeBrowserView] = None
         self._safe_breeding_view: Optional[SafeBreedingView] = None
         self._room_optimizer_view: Optional[RoomOptimizerView] = None
+        self._excluded_from_breeding: set[int] = set()  # Set of cat db_keys excluded from breeding
         self._zoom_percent: int = 100
         self._base_font: QFont = QApplication.instance().font()
         self._base_sidebar_width = 190
@@ -3249,7 +3295,7 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_safe_breeding_view") and self._safe_breeding_view is not None:
             self._safe_breeding_view.hide()
         if self._room_optimizer_view is not None:
-            self._room_optimizer_view.set_cats(self._cats)
+            self._room_optimizer_view.set_cats(self._cats, self._excluded_from_breeding)
             self._room_optimizer_view.show()
         if hasattr(self, "_btn_tree_view"):
             self._btn_tree_view.setChecked(False)
