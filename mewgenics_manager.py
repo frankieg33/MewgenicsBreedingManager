@@ -588,18 +588,6 @@ class Cat:
             sex_code,
             _normalize_gender(raw_gender),
         )
-
-        # Try to read sexual orientation (may be stored after gender)
-        saved_pos = r.pos
-        try:
-            potential_orientation = r.str()
-            if potential_orientation and potential_orientation.lower() in ['straight', 'gay', 'lesbian', 'bi', 'bisexual']:
-                self.sexual_orientation = potential_orientation.lower()
-            else:
-                r.seek(saved_pos)
-        except Exception:
-            r.seek(saved_pos)
-
         r.f64()
 
         self.stat_base = [r.u32() for _ in range(7)]
@@ -615,7 +603,6 @@ class Cat:
         self.aggression  = None   # None = unknown
         self.libido      = None
         self.inbredness  = None
-        self.sexual_orientation = None  # None = unknown
 
         # Relationship scaffolds — resolved by parse_save after all cats loaded.
         self._lover_uids: list[int] = []
@@ -895,22 +882,6 @@ def can_breed(a: Cat, b: Cat) -> tuple[bool, str]:
     if ga == "?" or gb == "?":
         return True, ""
     if ga != gb and {ga, gb} == {"male", "female"}:
-        # Check sexual orientation compatibility
-        oa = (a.sexual_orientation or "").strip().lower()
-        ob = (b.sexual_orientation or "").strip().lower()
-
-        # Check if orientations are compatible
-        if oa and ob:
-            # Both must be compatible with opposite sex
-            if ga == "male" and oa in ["gay"] and gb == "female":
-                return False, "Male cat is gay — incompatible with females"
-            if ga == "female" and oa in ["lesbian"] and gb == "male":
-                return False, "Female cat is lesbian — incompatible with males"
-            if gb == "male" and ob in ["gay"] and ga == "female":
-                return False, "Male cat is gay — incompatible with females"
-            if gb == "female" and ob in ["lesbian"] and ga == "male":
-                return False, "Female cat is lesbian — incompatible with males"
-
         return True, ""
     # Same known sex
     if ga == "female" and gb == "female":
@@ -1075,52 +1046,25 @@ def parse_save(path: str) -> tuple[list, list]:
             if parent is not None and cat not in parent.children:
                 parent.children.append(cat)
 
-    # Compute generation depth safely (iterative; handles cycles)
-    # Strays: generation 0
-    for c in cats:
-        c.generation = 0 if (c.parent_a is None and c.parent_b is None) else -1
+    # Compute generation depth (0=stray, N=max parent gen + 1).
+    # Uses memoisation; safe because circular parent refs are already blocked.
+    _gen_cache: dict = {}
+    def _get_gen(c: Cat) -> int:
+        cid = id(c)
+        if cid in _gen_cache:
+            return _gen_cache[cid]
+        if c.parent_a is None and c.parent_b is None:
+            _gen_cache[cid] = 0
+            return 0
+        pa_g = _get_gen(c.parent_a) if c.parent_a else -1
+        pb_g = _get_gen(c.parent_b) if c.parent_b else -1
+        g = max(pa_g, pb_g) + 1
+        _gen_cache[cid] = g
+        return g
+    for cat in cats:
+        cat.generation = _get_gen(cat)
 
-    # Relaxation: propagate parent generations downward until stable
-    for _ in range(len(cats) + 1):
-        changed = False
-        for c in cats:
-            pa_g = c.parent_a.generation if c.parent_a is not None else -1
-            pb_g = c.parent_b.generation if c.parent_b is not None else -1
-
-            # If at least one parent has a known generation, we can set this cat's generation.
-            if pa_g >= 0 or pb_g >= 0:
-                g = max(pa_g, pb_g) + 1
-                if c.generation != g:
-                    c.generation = g
-                    changed = True
-
-        if not changed:
-            break
-
-    # Any remaining -1 are part of cycles or disconnected-from-stray components; default them to 0.
-    for c in cats:
-        if c.generation < 0:
-            c.generation = 0
-
-'    # Compute generation depth (0=stray, N=max parent gen + 1).
-'    # Uses memoisation; safe because circular parent refs are already blocked.
-'    _gen_cache: dict = {}
-'    def _get_gen(c: Cat) -> int:
-'        cid = id(c)
-'        if cid in _gen_cache:
-'            return _gen_cache[cid]
-'        if c.parent_a is None and c.parent_b is None:
-'            _gen_cache[cid] = 0
-'            return 0
-'        pa_g = _get_gen(c.parent_a) if c.parent_a else -1
-'        pb_g = _get_gen(c.parent_b) if c.parent_b else -1
-'        g = max(pa_g, pb_g) + 1
-'        _gen_cache[cid] = g
-'        return g
-'    for cat in cats:
-'        cat.generation = _get_gen(cat)
-'
-'    return cats, errors
+    return cats, errors
 
 
 def find_save_files() -> list[str]:
@@ -1138,20 +1082,19 @@ def find_save_files() -> list[str]:
 
 # ── Qt table model ────────────────────────────────────────────────────────────
 
-COLUMNS   = ["Name", "♀/♂", "Orient", "Room", "Status"] + STAT_NAMES + ["Sum", "Abilities", "Mutations", "Risk%", "Gen", "Source", "Inbr"]
+COLUMNS   = ["Name", "♀/♂", "Room", "Status"] + STAT_NAMES + ["Sum", "Abilities", "Mutations", "Risk%", "Gen", "Source", "Inbr"]
 COL_NAME  = 0
 COL_GEN   = 1
-COL_ORIENT = 2
-COL_ROOM  = 3
-COL_STAT  = 4
-STAT_COLS = list(range(5, 12))   # STR … LCK  (indices 5–11)
-COL_SUM   = 12
-COL_ABIL  = 13
-COL_MUTS  = 14
-COL_REL   = 15
-COL_AGE   = 16   # generation depth
-COL_SRC   = 17
-COL_INB   = 18
+COL_ROOM  = 2
+COL_STAT  = 3
+STAT_COLS = list(range(4, 11))   # STR … LCK  (indices 4–10)
+COL_SUM   = 11
+COL_ABIL  = 12
+COL_MUTS  = 13
+COL_REL   = 14
+COL_AGE   = 15   # generation depth
+COL_SRC   = 16
+COL_INB   = 17
 
 # Fixed pixel widths for narrow columns
 _W_STATUS = 62
@@ -1226,15 +1169,10 @@ class CatTableModel(QAbstractTableModel):
         if role == Qt.DisplayRole:
             if col == COL_NAME: return cat.name
             if col == COL_GEN:  return cat.gender_display
-            if col == COL_ORIENT:
-                if cat.sexual_orientation:
-                    abbrev = {"straight": "Het", "gay": "Gay", "lesbian": "Les", "bi": "Bi", "bisexual": "Bi"}
-                    return abbrev.get(cat.sexual_orientation, cat.sexual_orientation[:3].capitalize())
-                return "—"
             if col == COL_ROOM: return cat.room_display
             if col == COL_STAT: return STATUS_ABBREV.get(cat.status, cat.status)
             if col in STAT_COLS:
-                return str(cat.base_stats[STAT_NAMES[col - 5]])
+                return str(cat.base_stats[STAT_NAMES[col - 4]])
             if col == COL_SUM:
                 return str(sum(cat.base_stats.values()))
             if col == COL_MUTS:
@@ -1262,7 +1200,7 @@ class CatTableModel(QAbstractTableModel):
 
         elif role == Qt.UserRole:
             if col in STAT_COLS:
-                return cat.base_stats[STAT_NAMES[col - 5]]
+                return cat.base_stats[STAT_NAMES[col - 4]]
             if col == COL_SUM:
                 return sum(cat.base_stats.values())
             if col == COL_REL:
@@ -1281,7 +1219,7 @@ class CatTableModel(QAbstractTableModel):
             if compat == 'risky' and not self._show_lineage:
                 compat = 'ok'
             if col in STAT_COLS:
-                base_c = STAT_COLORS.get(cat.base_stats[STAT_NAMES[col - 5]], QColor(100, 100, 115))
+                base_c = STAT_COLORS.get(cat.base_stats[STAT_NAMES[col - 4]], QColor(100, 100, 115))
                 if compat == 'incompatible':
                     return QBrush(QColor(base_c.red() // 4, base_c.green() // 4, base_c.blue() // 4))
                 if compat == 'risky':
@@ -1324,7 +1262,7 @@ class CatTableModel(QAbstractTableModel):
 
         elif role == Qt.ToolTipRole:
             if col in STAT_COLS:
-                n = STAT_NAMES[col - 5]
+                n = STAT_NAMES[col - 4]
                 b = cat.base_stats[n]
                 t = cat.total_stats[n]
                 extra = f"  (+{t - b})" if t != b else ""
@@ -1478,12 +1416,7 @@ class CatDetailPanel(QWidget):
         nl = QLabel(cat.name); nl.setStyleSheet(_NAME_STYLE)
         gl = QLabel(cat.gender_display)
         gl.setStyleSheet("color:#7ac; font-size:12px; font-weight:bold;")
-        name_row.addWidget(nl); name_row.addWidget(gl)
-        if cat.sexual_orientation:
-            orient_label = QLabel(f"({cat.sexual_orientation.capitalize()})")
-            orient_label.setStyleSheet("color:#9a9; font-size:10px;")
-            name_row.addWidget(orient_label)
-        name_row.addStretch()
+        name_row.addWidget(nl); name_row.addWidget(gl); name_row.addStretch()
         id_col.addLayout(name_row)
         id_col.addWidget(QLabel(cat.room_display or "—", styleSheet=_META_STYLE))
 
@@ -1626,10 +1559,6 @@ class CatDetailPanel(QWidget):
             gl = QLabel(cat.gender_display)
             gl.setStyleSheet("color:#7ac; font-size:12px; font-weight:bold;")
             hdr.addWidget(gl)
-            if cat.sexual_orientation:
-                ol = QLabel(f"({cat.sexual_orientation[:3].capitalize()})")
-                ol.setStyleSheet("color:#9a9; font-size:10px;")
-                hdr.addWidget(ol)
             rl = QLabel(f"  {cat.room_display}" if cat.room_display else "")
             rl.setStyleSheet(_META_STYLE)
             hdr.addWidget(rl)
@@ -3521,4 +3450,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-
