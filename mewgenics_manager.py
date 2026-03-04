@@ -1075,25 +1075,52 @@ def parse_save(path: str) -> tuple[list, list]:
             if parent is not None and cat not in parent.children:
                 parent.children.append(cat)
 
-    # Compute generation depth (0=stray, N=max parent gen + 1).
-    # Uses memoisation; safe because circular parent refs are already blocked.
-    _gen_cache: dict = {}
-    def _get_gen(c: Cat) -> int:
-        cid = id(c)
-        if cid in _gen_cache:
-            return _gen_cache[cid]
-        if c.parent_a is None and c.parent_b is None:
-            _gen_cache[cid] = 0
-            return 0
-        pa_g = _get_gen(c.parent_a) if c.parent_a else -1
-        pb_g = _get_gen(c.parent_b) if c.parent_b else -1
-        g = max(pa_g, pb_g) + 1
-        _gen_cache[cid] = g
-        return g
-    for cat in cats:
-        cat.generation = _get_gen(cat)
+    # Compute generation depth safely (iterative; handles cycles)
+    # Strays: generation 0
+    for c in cats:
+        c.generation = 0 if (c.parent_a is None and c.parent_b is None) else -1
 
-    return cats, errors
+    # Relaxation: propagate parent generations downward until stable
+    for _ in range(len(cats) + 1):
+        changed = False
+        for c in cats:
+            pa_g = c.parent_a.generation if c.parent_a is not None else -1
+            pb_g = c.parent_b.generation if c.parent_b is not None else -1
+
+            # If at least one parent has a known generation, we can set this cat's generation.
+            if pa_g >= 0 or pb_g >= 0:
+                g = max(pa_g, pb_g) + 1
+                if c.generation != g:
+                    c.generation = g
+                    changed = True
+
+        if not changed:
+            break
+
+    # Any remaining -1 are part of cycles or disconnected-from-stray components; default them to 0.
+    for c in cats:
+        if c.generation < 0:
+            c.generation = 0
+
+'    # Compute generation depth (0=stray, N=max parent gen + 1).
+'    # Uses memoisation; safe because circular parent refs are already blocked.
+'    _gen_cache: dict = {}
+'    def _get_gen(c: Cat) -> int:
+'        cid = id(c)
+'        if cid in _gen_cache:
+'            return _gen_cache[cid]
+'        if c.parent_a is None and c.parent_b is None:
+'            _gen_cache[cid] = 0
+'            return 0
+'        pa_g = _get_gen(c.parent_a) if c.parent_a else -1
+'        pb_g = _get_gen(c.parent_b) if c.parent_b else -1
+'        g = max(pa_g, pb_g) + 1
+'        _gen_cache[cid] = g
+'        return g
+'    for cat in cats:
+'        cat.generation = _get_gen(cat)
+'
+'    return cats, errors
 
 
 def find_save_files() -> list[str]:
@@ -3494,3 +3521,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
