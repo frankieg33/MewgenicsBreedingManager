@@ -388,10 +388,166 @@ _ABILITY_LOOKUP: dict[str, str] = {
 }
 
 
+_GPAK_SEARCH_PATHS = [
+    "/mnt/c/Program Files (x86)/Steam/steamapps/common/Mewgenics/resources.gpak",
+    "/mnt/c/Program Files/Steam/steamapps/common/Mewgenics/resources.gpak",
+]
+
+_STAT_LABELS = {
+    "str": "STR", "con": "CON", "int": "INT", "dex": "DEX",
+    "spd": "SPD", "lck": "LCK", "cha": "CHA",
+    "shield": "Shield", "divine_shield": "Holy Shield",
+}
+
+
+def _load_ability_descriptions() -> dict[str, str]:
+    """
+    Build {normalized_ability_id: english_desc} by reading ability/passive GON files
+    and combined.csv from the game's gpak. Returns {} if gpak not found.
+    """
+    gpak_path = next((p for p in _GPAK_SEARCH_PATHS if os.path.exists(p)), None)
+    if not gpak_path:
+        return {}
+    try:
+        with open(gpak_path, "rb") as f:
+            count = struct.unpack("<I", f.read(4))[0]
+            entries = []
+            for _ in range(count):
+                name_len = struct.unpack("<H", f.read(2))[0]
+                name = f.read(name_len).decode("utf-8", errors="replace")
+                size = struct.unpack("<I", f.read(4))[0]
+                entries.append((name, size))
+            dir_end = f.tell()
+
+            file_offsets: dict[str, tuple[int, int]] = {}
+            off = dir_end
+            for name, size in entries:
+                file_offsets[name] = (off, size)
+                off += size
+
+            import csv as _csv, io as _io
+            game_strings: dict[str, str] = {}
+            if "data/text/combined.csv" in file_offsets:
+                csv_off, csv_sz = file_offsets["data/text/combined.csv"]
+                f.seek(csv_off)
+                raw_csv = f.read(csv_sz).decode("utf-8-sig", errors="replace")
+                for row in _csv.reader(_io.StringIO(raw_csv)):
+                    if len(row) >= 2 and row[0] and not row[0].startswith("//"):
+                        game_strings[row[0]] = row[1]
+
+            _block_re = re.compile(r'^([A-Za-z]\w*)\s*\{', re.MULTILINE)
+            _desc_re  = re.compile(r'^\s*desc\s+"([^"]*)"', re.MULTILINE)
+
+            def _clean(text: str) -> str:
+                text = re.sub(r'\[img:[^\]]+\]', '', text)
+                text = re.sub(r'\[s:[^\]]*\]|\[/s\]', '', text)
+                text = re.sub(r'\[c:[^\]]*\]|\[/c\]', '', text)
+                return re.sub(r'\s+', ' ', text).strip()
+
+            result: dict[str, str] = {}
+            for fname, (foff, fsz) in file_offsets.items():
+                if not (
+                    (fname.startswith("data/abilities/") or fname.startswith("data/passives/"))
+                    and fname.endswith(".gon")
+                ):
+                    continue
+                f.seek(foff)
+                content = f.read(fsz).decode("utf-8", errors="replace")
+                for bm in _block_re.finditer(content):
+                    ability_id = bm.group(1)
+                    block_start = bm.end()
+                    depth, j = 1, block_start
+                    while j < len(content) and depth > 0:
+                        if content[j] == '{': depth += 1
+                        elif content[j] == '}': depth -= 1
+                        j += 1
+                    block = content[block_start:j - 1]
+                    dm = _desc_re.search(block)
+                    if not dm:
+                        continue
+                    desc_val = dm.group(1)
+                    if desc_val in game_strings:
+                        desc_val = game_strings[desc_val]
+                    if not desc_val or desc_val == "nothing":
+                        continue
+                    result[ability_id.lower()] = _clean(desc_val)
+        return result
+    except Exception:
+        return {}
+
+
+_ABILITY_DESC: dict[str, str] = _load_ability_descriptions()
+
+
 def _ability_tip(name: str) -> str:
     """Return a tooltip description for an ability/mutation name, or '' if unknown."""
+    if name in _VISUAL_MUT_TIPS:
+        return _VISUAL_MUT_TIPS[name]
     key = re.sub(r'[^a-z0-9]', '', name.lower())
-    return _ABILITY_LOOKUP.get(key, "")
+    return _ABILITY_DESC.get(key) or _ABILITY_LOOKUP.get(key, "")
+
+
+_MUTATION_DISPLAY_NAMES: dict[str, str] = {
+    # Birth defects with ambiguous splits
+    "twoedarm":           "Two-Toed Arm",
+    "twotoedarm":         "Two-Toed Arm",
+    "twoedleg":           "Two-Toed Leg",
+    "twotoedleg":         "Two-Toed Leg",
+    "conjoinedbody":      "Conjoined Body",
+    "lumpybody":          "Lumpy Body",
+    "malnourishedbody":   "Malnourished Body",
+    "turnersyndrome":     "Turner Syndrome",
+    "birdbeakears":       "Bird Beak Ears",
+    "floppyears":         "Floppy Ears",
+    "inwardeyes":         "Inward Eyes",
+    "redeyes":            "Red Eyes",
+    "bushyeyebrow":       "Bushy Eyebrow",
+    "noeyebrows":         "No Eyebrows",
+    "conjoinedtwin":      "Conjoined Twin",
+    "bentleg":            "Bent Leg",
+    "duckleg":            "Duck Leg",
+    "bentarm":            "Bent Arm",
+    "nomouth":            "No Mouth",
+    "cleftlip":           "Cleft Lip",
+    "lumpytail":          "Lumpy Tail",
+    "notail":             "No Tail",
+    "tailsack":           "Tail Sack",
+    # Passives requiring apostrophes or non-obvious splits
+    "etank":              "E-Tank",
+    "deathsdoor":         "Death's Door",
+    "mightofthemeek":     "Might of the Meek",
+    "minime":             "Mini-Me",
+    "jackofalltrades":    "Jack of All Trades",
+    "slowandsteady":      "Slow and Steady",
+    "huntersboon":        "Hunter's Boon",
+    # Soul passives
+    "butcherssoul":       "Butcher's Soul",
+    "clericsoul":         "Cleric Soul",
+    "druidsoul":          "Druid Soul",
+    "fighterssoul":       "Fighter's Soul",
+    "hunterssoul":        "Hunter's Soul",
+    "jesterssoul":        "Jester's Soul",
+    "magessoul":          "Mage's Soul",
+    "monkssoul":          "Monk's Soul",
+    "necromancerssoul":   "Necromancer's Soul",
+    "psychicssoul":       "Psychic's Soul",
+    "sorcerersoul":       "Sorcerer Soul",
+    "tankssoul":          "Tank's Soul",
+    "thiefsoul":          "Thief Soul",
+    "tinkerersoul":       "Tinkerer Soul",
+    "voidsoul":           "Void Soul",
+}
+
+
+def _mutation_display_name(name: str) -> str:
+    """Return a human-readable display name for a mutation/ability identifier."""
+    key = re.sub(r'[^a-z0-9]', '', name.lower())
+    if key in _MUTATION_DISPLAY_NAMES:
+        return _MUTATION_DISPLAY_NAMES[key]
+    # Split CamelCase
+    s = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', name)
+    s = re.sub(r'(?<=[A-Z])(?=[A-Z][a-z])', ' ', s)
+    return s
 
 
 # ── Binary reader ─────────────────────────────────────────────────────────────
@@ -479,6 +635,118 @@ def _scan_blob_for_parent_uids(raw: bytes, uid_set: frozenset, self_uid: int) ->
     return 0, 0
 
 
+# ── Visual mutation data loader ───────────────────────────────────────────────
+
+# Runtime tooltip cache: {display_name: tooltip_str}, populated by _read_visual_mutations
+_VISUAL_MUT_TIPS: dict[str, str] = {}
+
+
+def _parse_mutation_gon(content: str, game_strings: dict, category: str) -> dict:
+    """Parse a mutation GON file → {slot_id: (display_name, stat_desc)}.
+
+    stat_desc prefers the localized MUTATION_{CATEGORY}_{SLOT}_DESC string from
+    combined.csv; falls back to raw top-level stats (e.g. "+2 LCK").
+    """
+    result = {}
+    csv_prefix = f"MUTATION_{category.upper()}_"
+    i = 0
+    while i < len(content):
+        m = re.search(r'(?<!\w)(\d{3,})\s*\{', content[i:])
+        if not m:
+            break
+        slot_id = int(m.group(1))
+        block_start = i + m.end()
+        depth, j = 1, block_start
+        while j < len(content) and depth > 0:
+            if content[j] == '{': depth += 1
+            elif content[j] == '}': depth -= 1
+            j += 1
+        block = content[block_start:j - 1]
+        i = j
+
+        if slot_id < 300:
+            continue
+
+        name_m = re.search(r'//\s*(.+)', block)
+        name = name_m.group(1).strip().title() if name_m else f"Mutation {slot_id}"
+
+        csv_key = f"{csv_prefix}{slot_id}_DESC"
+        if csv_key in game_strings:
+            stat_desc = game_strings[csv_key].strip().rstrip(".")
+        else:
+            top = block.split('{')[0]
+            stats = []
+            for key, label in _STAT_LABELS.items():
+                sm = re.search(rf'(?<!\w){re.escape(key)}\s+(-?\d+)', top)
+                if sm:
+                    val = int(sm.group(1))
+                    stats.append(f"{'+' if val > 0 else ''}{val} {label}")
+            stat_desc = ", ".join(stats)
+
+        result[slot_id] = (name, stat_desc)
+    return result
+
+
+def _load_visual_mut_data() -> dict:
+    """Load {gon_category: {slot_id: (name, stat_desc)}} from the game's gpak."""
+    gpak_path = next((p for p in _GPAK_SEARCH_PATHS if os.path.exists(p)), None)
+    if not gpak_path:
+        return {}
+    try:
+        import csv as _csv, io as _io
+        with open(gpak_path, "rb") as f:
+            count = struct.unpack("<I", f.read(4))[0]
+            entries = []
+            for _ in range(count):
+                name_len = struct.unpack("<H", f.read(2))[0]
+                name = f.read(name_len).decode("utf-8", errors="replace")
+                size = struct.unpack("<I", f.read(4))[0]
+                entries.append((name, size))
+            dir_end = f.tell()
+
+            offset = dir_end
+            file_offsets = {}
+            for name, size in entries:
+                file_offsets[name] = (offset, size)
+                offset += size
+
+            game_strings: dict[str, str] = {}
+            if "data/text/combined.csv" in file_offsets:
+                csv_off, csv_sz = file_offsets["data/text/combined.csv"]
+                f.seek(csv_off)
+                raw_csv = f.read(csv_sz).decode("utf-8-sig", errors="replace")
+                for row in _csv.reader(_io.StringIO(raw_csv)):
+                    if len(row) >= 2 and row[0] and not row[0].startswith("//"):
+                        game_strings[row[0]] = row[1]
+
+            result = {}
+            for fname, (off, sz) in file_offsets.items():
+                if not (fname.startswith("data/mutations/") and fname.endswith(".gon")):
+                    continue
+                category = fname.split("/")[-1].replace(".gon", "")
+                f.seek(off)
+                content = f.read(sz).decode("utf-8", errors="replace")
+                result[category] = _parse_mutation_gon(content, game_strings, category)
+        return result
+    except Exception:
+        return {}
+
+
+# {gon_category: {slot_id: (display_name, stat_desc)}}
+_VISUAL_MUT_DATA: dict = _load_visual_mut_data()
+
+# Mapping from slot index → GON file category
+_SLOT_TO_GON: dict[str, str] = {
+    "Body":  "body",
+    "Head":  "head",
+    "Tail":  "tail",
+    "Eye":   "eyes",
+    "Ear":   "ears",
+    "Leg":   "legs",
+    "Mouth": "mouth",
+}
+
+
 # ── Visual mutation scanner ───────────────────────────────────────────────────
 
 # 14 body-part slots (0-indexed); slot_id ≥ 300 in the blob = active mutation
@@ -521,16 +789,26 @@ def _find_mutation_table(raw: bytes) -> int:
 
 
 def _read_visual_mutations(raw: bytes) -> list:
-    """Return list of active visual-mutation names (e.g. 'Eye Mutation')."""
+    """Return list of active visual-mutation display names, resolved from gpak data."""
     base = _find_mutation_table(raw)
     if base == -1:
         return []
     result = []
     for i in range(14):
         slot_id = struct.unpack_from('<I', raw, base + 16 + i * 20)[0]
-        if slot_id >= 300:
-            name = VISUAL_MUT_NAMES[i] if i < len(VISUAL_MUT_NAMES) else f"Mutation{i+1}"
-            result.append(f"{name} Mutation")
+        if slot_id < 300:
+            continue
+        part = VISUAL_MUT_NAMES[i] if i < len(VISUAL_MUT_NAMES) else f"Mutation{i+1}"
+        gon_cat = _SLOT_TO_GON.get(part)
+        mut_info = _VISUAL_MUT_DATA.get(gon_cat, {}).get(slot_id) if gon_cat else None
+        if mut_info:
+            display, stat_desc = mut_info
+            tip = f"{display}  —  {stat_desc}" if stat_desc else display
+        else:
+            display = f"{part} Mutation"
+            tip = display
+        result.append(display)
+        _VISUAL_MUT_TIPS[display] = tip
     return result
 
 
@@ -1879,14 +2157,15 @@ def _vsep() -> QFrame:
 
 
 class ChipRow(QWidget):
-    def __init__(self, items: list[str], tooltip_fn=None):
+    def __init__(self, items: list[str], tooltip_fn=None, display_fn=None):
         super().__init__()
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(5)
         for item in items:
+            label = display_fn(item) if display_fn else item
             tip = tooltip_fn(item) if tooltip_fn else ""
-            row.addWidget(_chip(item, tip))
+            row.addWidget(_chip(label, tip))
         row.addStretch()
 
 
@@ -2056,7 +2335,7 @@ class CatDetailPanel(QWidget):
             root.addWidget(_vsep())
             mu = QVBoxLayout(); mu.setSpacing(4)
             mu.addWidget(_sec("MUTATIONS"))
-            mu.addWidget(ChipRow(cat.mutations, tooltip_fn=_ability_tip))
+            mu.addWidget(ChipRow(cat.mutations, display_fn=_mutation_display_name, tooltip_fn=_ability_tip))
             mu.addStretch()
             root.addLayout(mu)
 
@@ -2321,7 +2600,7 @@ class CatDetailPanel(QWidget):
                     mrow.setSpacing(5)
                     mrow.addWidget(QLabel(f"{cat.name}:", styleSheet="color:#555; font-size:10px;"))
                     for mut in cat.mutations:
-                        mrow.addWidget(_chip(mut, _ability_tip(mut)))
+                        mrow.addWidget(_chip(_mutation_display_name(mut), _ability_tip(mut)))
                     mrow.addStretch()
                     mc.addLayout(mrow)
             mc.addStretch()
