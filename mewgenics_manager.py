@@ -738,33 +738,64 @@ _VISUAL_MUT_DATA: dict = _load_visual_mut_data()
 # ── Visual mutation scanner ───────────────────────────────────────────────────
 
 # Mapping from T-array index → (display_part_name, gon_category).
-# T is the 72-element uint32 array read immediately after the 64-byte skip in
-# Cat.__init__.  Known mappings confirmed from game save analysis:
-#   T[0]  = texture/coat pattern
-#   T[3]  = body shape
-#   T[8]  = head shape
-# Slot IDs ≥ 300 in any of these positions indicate an active visual mutation.
-# Additional T indices (tail, ear, eye, leg, mouth) can be added here as
-# they are discovered from cats with those mutation types.
-_T_VISUAL_SLOTS: dict[int, tuple[str, str]] = {
-    0: ("Texture", "texture"),
-    3: ("Body",    "body"),
-    8: ("Head",    "head"),
-}
+# T is the 72-element uint32 array (288 bytes) read immediately after the
+# 64-byte skip in Cat.__init__.  Slot IDs ≥ 300 = active visual mutation.
+#
+# Confirmed from save-file analysis (catgen.gon + cross-referencing cats
+# with known mutations against game UI):
+#   T[0]  = texture/coat    (GON: texture)
+#   T[3]  = body shape      (GON: body)
+#   T[8]  = head shape      (GON: head)    — Fuzz T[8]=309 → "Half Moon"
+#   T[13] = tail            (GON: tail)    — G'raha T[13]=417 → Tail Mutation
+#   T[18] = eyes            (GON: eyes)    — Roberto T[18]=701 → Anophthalmia
+#   T[23] = eyes (paired copy, usually identical to T[18]; skip duplicates)
+#   T[28] = legs            (GON: legs)    — Hispancat T[28]=303 → Lobster Claws
+#   T[33] = legs (paired copy)
+#   T[38] = mouth           (GON: mouth)   — Berlioz T[38]=704 → Overbite
+#   T[43] = mouth (paired copy)
+#   T[48] = eyebrows        (GON: eyebrows)— G'raha T[48]=423 → Eyebrow Mutation
+#   T[53] = eyebrows (paired copy)
+#   T[58] = ears            (GON: ears)    — G'raha T[58]=316 → Bat Ears
+#   T[63] = ears (paired copy)
+#   T[68] = unknown (omitted; slot 415 appears there for many cats but no
+#           known GON file for this position)
+_T_VISUAL_SLOTS: list[tuple[int, str, str]] = [
+    ( 0, "Texture",  "texture"),
+    ( 3, "Body",     "body"),
+    ( 8, "Head",     "head"),
+    (13, "Tail",     "tail"),
+    (18, "Eye",      "eyes"),
+    (28, "Leg",      "legs"),
+    (38, "Mouth",    "mouth"),
+    (48, "Eyebrow",  "eyebrows"),
+    (58, "Ear",      "ears"),
+]
 
 
 def _read_visual_mutations(T: list) -> list:
-    """Return list of active visual-mutation display names from T array."""
+    """Return list of active visual-mutation display names from T array.
+
+    Paired slots (T[23]=T[18], T[33]=T[28], etc.) are deduplicated via the
+    `seen` set so each mutation appears once.
+    """
+    seen: set[int] = set()
     result = []
-    for t_idx, (part_name, gon_cat) in _T_VISUAL_SLOTS.items():
+    for t_idx, part_name, gon_cat in _T_VISUAL_SLOTS:
         if t_idx >= len(T):
             continue
         slot_id = T[t_idx]
-        if slot_id < 300:
+        if slot_id < 300 or slot_id == 0xFFFF_FFFF or slot_id in seen:
             continue
+        seen.add(slot_id)
         mut_info = _VISUAL_MUT_DATA.get(gon_cat, {}).get(slot_id)
         if mut_info:
-            display, stat_desc = mut_info
+            raw_name, stat_desc = mut_info
+            # If the GON only has a generic "Mutation NNN" name, label by body part
+            # to match the game's display (e.g. "Tail Mutation" instead of "Mutation 417")
+            if re.match(r'^Mutation \d+$', raw_name):
+                display = f"{part_name} Mutation"
+            else:
+                display = raw_name
             tip = f"{display}  —  {stat_desc}" if stat_desc else display
         else:
             display = f"{part_name} Mutation"
