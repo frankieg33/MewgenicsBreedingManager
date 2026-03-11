@@ -735,77 +735,39 @@ def _load_visual_mut_data() -> dict:
 # {gon_category: {slot_id: (display_name, stat_desc)}}
 _VISUAL_MUT_DATA: dict = _load_visual_mut_data()
 
-# Mapping from slot index → GON file category
-_SLOT_TO_GON: dict[str, str] = {
-    "Body":  "body",
-    "Head":  "head",
-    "Tail":  "tail",
-    "Eye":   "eyes",
-    "Ear":   "ears",
-    "Leg":   "legs",
-    "Mouth": "mouth",
+# ── Visual mutation scanner ───────────────────────────────────────────────────
+
+# Mapping from T-array index → (display_part_name, gon_category).
+# T is the 72-element uint32 array read immediately after the 64-byte skip in
+# Cat.__init__.  Known mappings confirmed from game save analysis:
+#   T[0]  = texture/coat pattern
+#   T[3]  = body shape
+#   T[8]  = head shape
+# Slot IDs ≥ 300 in any of these positions indicate an active visual mutation.
+# Additional T indices (tail, ear, eye, leg, mouth) can be added here as
+# they are discovered from cats with those mutation types.
+_T_VISUAL_SLOTS: dict[int, tuple[str, str]] = {
+    0: ("Texture", "texture"),
+    3: ("Body",    "body"),
+    8: ("Head",    "head"),
 }
 
 
-# ── Visual mutation scanner ───────────────────────────────────────────────────
-
-# 14 body-part slots (0-indexed); slot_id ≥ 300 in the blob = active mutation
-VISUAL_MUT_NAMES = [
-    "Body", "Head", "Tail", "Eye", "Ear",
-    "Leg", "Paw", "Belly", "Back", "Fur",
-    "Wing", "Horn", "Fang", "Mark",
-]
-
-def _find_mutation_table(raw: bytes) -> int:
-    """
-    Locate the 296-byte visual-mutation table by scanning for its header:
-      entry-0: f32 scale [0.05, 20.0], u32 coat_id [1, 20000], u32 small ≤ 500,
-               u32 sentinel (0 or ≤ 5000)
-      entries 1-14: 20 bytes each, second u32 (coat_id or 0) validated for ≥10 slots.
-    Returns base offset, or -1 if not found.
-    """
-    size = 16 + 14 * 20   # 296 bytes
-    limit = len(raw) - size
-    for base in range(limit):
-        scale = struct.unpack_from('<f', raw, base)[0]
-        if not (0.05 <= scale <= 20.0):
-            continue
-        coat = struct.unpack_from('<I', raw, base + 4)[0]
-        if coat == 0 or coat > 20_000:
-            continue
-        t1 = struct.unpack_from('<I', raw, base + 8)[0]
-        if t1 > 500:
-            continue
-        t2 = struct.unpack_from('<I', raw, base + 12)[0]
-        if t2 != 0xFFFF_FFFF and t2 > 5_000:
-            continue
-        matches = sum(
-            1 for i in range(14)
-            if struct.unpack_from('<I', raw, base + 16 + i * 20 + 4)[0] in (coat, 0)
-        )
-        if matches >= 10:
-            return base
-    return -1
-
-
-def _read_visual_mutations(raw: bytes) -> list:
-    """Return list of active visual-mutation display names, resolved from gpak data."""
-    base = _find_mutation_table(raw)
-    if base == -1:
-        return []
+def _read_visual_mutations(T: list) -> list:
+    """Return list of active visual-mutation display names from T array."""
     result = []
-    for i in range(14):
-        slot_id = struct.unpack_from('<I', raw, base + 16 + i * 20)[0]
+    for t_idx, (part_name, gon_cat) in _T_VISUAL_SLOTS.items():
+        if t_idx >= len(T):
+            continue
+        slot_id = T[t_idx]
         if slot_id < 300:
             continue
-        part = VISUAL_MUT_NAMES[i] if i < len(VISUAL_MUT_NAMES) else f"Mutation{i+1}"
-        gon_cat = _SLOT_TO_GON.get(part)
-        mut_info = _VISUAL_MUT_DATA.get(gon_cat, {}).get(slot_id) if gon_cat else None
+        mut_info = _VISUAL_MUT_DATA.get(gon_cat, {}).get(slot_id)
         if mut_info:
             display, stat_desc = mut_info
             tip = f"{display}  —  {stat_desc}" if stat_desc else display
         else:
-            display = f"{part} Mutation"
+            display = f"{part_name} Mutation"
             tip = display
         result.append(display)
         _VISUAL_MUT_TIPS[display] = tip
@@ -821,6 +783,7 @@ class Cat:
     generation: int = 0   # generation depth: 0=stray, 1=child of strays, etc.
     is_blacklisted: bool = False  # exclude from breeding calculations
     must_breed: bool = False  # prioritize in breeding optimization
+    passive_abilities: list  # passive traits from ability run (always set in __init__)
 
     def __init__(self, blob: bytes, cat_key: int, house_info: dict, adventure_keys: set):
         uncomp_size = struct.unpack('<I', blob[:4])[0]
@@ -863,7 +826,6 @@ class Cat:
         r.skip(64)
         T = [r.u32() for _ in range(72)]
         self.body_parts = {"texture": T[0], "bodyShape": T[3], "headShape": T[8]}
-        self.visual_mutation_ids = [T[i] for i in range(14, 29) if i < 72 and T[i] != 0]
 
         r.skip(12)
         raw_gender = r.str()
@@ -988,7 +950,7 @@ class Cat:
                 except Exception:
                     pass
 
-            self.mutations = passives
+            self.passive_abilities = passives
             self.equipment = []   # equipment parsing requires separate byte-marker logic
 
         else:
@@ -1007,10 +969,10 @@ class Cat:
             self.abilities = [a for a in [r.str() for _ in range(6)] if _valid_str(a)]
             self.equipment = [s for s in [r.str() for _ in range(4)] if _valid_str(s)]
 
-            self.mutations = []
+            self.passive_abilities = []
             first = r.str()
             if _valid_str(first):
-                self.mutations.append(first)
+                self.passive_abilities.append(first)
             for _ in range(13):
                 if r.remaining() < 12:
                     break
@@ -1019,13 +981,10 @@ class Cat:
                     break
                 p = r.str()
                 if _valid_str(p):
-                    self.mutations.append(p)
+                    self.passive_abilities.append(p)
 
-        # Visual mutations from the 296-byte fixed mutation table (prepend so they
-        # show first; passive trait strings from the ability run follow)
-        vis = _read_visual_mutations(raw)
-        if vis:
-            self.mutations = vis + self.mutations
+        # Visual mutations from T array (slot IDs ≥ 300 in known body-part slots)
+        self.mutations = _read_visual_mutations(T)
 
         # Legacy token fallback is already handled above when sex_code is unavailable.
 
@@ -1925,9 +1884,10 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_SUM:
                 return str(sum(cat.base_stats.values()))
             if col == COL_MUTS:
-                return ", ".join(cat.mutations)
+                return ", ".join(_mutation_display_name(m) for m in cat.mutations)
             if col == COL_ABIL:
-                return ", ".join(cat.abilities)
+                parts = list(cat.abilities) + [f"● {p}" for p in cat.passive_abilities]
+                return ", ".join(parts)
             if col == COL_REL:
                 if self._focus_cat is None:
                     return "—"
@@ -2030,9 +1990,10 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_MB:
                 return "Must breed - prioritized in optimization" if cat.must_breed else "Normal breeding priority"
             if col == COL_MUTS and cat.mutations:
-                return "\n".join(cat.mutations)
-            if col == COL_ABIL and cat.abilities:
-                return "\n".join(cat.abilities)
+                return "\n".join(_mutation_display_name(m) for m in cat.mutations)
+            if col == COL_ABIL and (cat.abilities or cat.passive_abilities):
+                lines = list(cat.abilities) + [f"● {p}" for p in cat.passive_abilities]
+                return "\n".join(lines)
             if col == COL_AGG:
                 if cat.aggression is None:
                     return "Aggression: unknown"
@@ -2321,16 +2282,19 @@ class CatDetailPanel(QWidget):
         id_col.addStretch()
         root.addLayout(id_col)
 
-        # Abilities
-        if cat.abilities:
+        # Abilities (active + passive)
+        if cat.abilities or cat.passive_abilities:
             root.addWidget(_vsep())
             ab = QVBoxLayout(); ab.setSpacing(4)
             ab.addWidget(_sec("ABILITIES"))
             ab.addWidget(ChipRow(cat.abilities, tooltip_fn=_ability_tip))
+            if cat.passive_abilities:
+                ab.addWidget(_sec("PASSIVE"))
+                ab.addWidget(ChipRow(cat.passive_abilities, display_fn=lambda n: f"● {_mutation_display_name(n)}", tooltip_fn=_ability_tip))
             ab.addStretch()
             root.addLayout(ab)
 
-        # Mutations
+        # Mutations (visual only)
         if cat.mutations:
             root.addWidget(_vsep())
             mu = QVBoxLayout(); mu.setSpacing(4)
@@ -2573,12 +2537,14 @@ class CatDetailPanel(QWidget):
         ab_col.setSpacing(6)
         ab_col.addWidget(_sec("ABILITIES"))
         for cat in (a, b):
-            if cat.abilities:
+            if cat.abilities or cat.passive_abilities:
                 row = QHBoxLayout()
                 row.setSpacing(5)
                 row.addWidget(QLabel(f"{cat.name}:", styleSheet="color:#555; font-size:10px;"))
                 for ab in cat.abilities:
                     row.addWidget(_chip(ab, _ability_tip(ab)))
+                for pa in cat.passive_abilities:
+                    row.addWidget(_chip(f"● {_mutation_display_name(pa)}", _ability_tip(pa)))
                 row.addStretch()
                 ab_col.addLayout(row)
         ab_col.addStretch()
