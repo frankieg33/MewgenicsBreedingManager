@@ -141,6 +141,7 @@ LOCALES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locales"
 _SUPPORTED_LANGUAGES = {
     "en": "language.english",
     "zh_CN": "language.zh_cn",
+    "ru": "language.ru",
 }
 _LOCALE_CACHE: dict[str, dict[str, str]] = {}
 _CURRENT_LANGUAGE = "en"
@@ -8153,7 +8154,7 @@ class CalibrationView(QWidget):
         combo.addItem(_tr("calibration.sexuality.bi"), "bi")
         combo.addItem(_tr("calibration.sexuality.gay"), "gay")
         combo.addItem(_tr("calibration.sexuality.straight"), "straight")
-        idx = combo.findData((value or "").strip().lower(), Qt.MatchFixedString)
+        idx = combo.findData((value or "").strip().lower(), Qt.UserRole, Qt.MatchFixedString)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         return combo
 
