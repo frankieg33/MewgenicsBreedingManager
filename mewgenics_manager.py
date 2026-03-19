@@ -19,7 +19,11 @@ import os
 import math
 from pathlib import Path
 from typing import Optional
-from visual_mutation_catalog import load_visual_mutation_names
+
+try:
+    from tools.visual_mutation_catalog import load_visual_mutation_names
+except ModuleNotFoundError:
+    from visual_mutation_catalog import load_visual_mutation_names
 
 _IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
@@ -5022,7 +5026,8 @@ class FamilyTreeBrowserView(QWidget):
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(8)
-        lv.addWidget(QLabel(_tr("family_tree.cats"), styleSheet="color:#666; font-size:10px; font-weight:bold;"))
+        self._cats_label = QLabel(_tr("family_tree.cats"), styleSheet="color:#666; font-size:10px; font-weight:bold;")
+        lv.addWidget(self._cats_label)
         mode_row = QHBoxLayout()
         mode_row.setContentsMargins(0, 0, 0, 0)
         mode_row.setSpacing(6)
@@ -8816,7 +8821,7 @@ class CalibrationView(QWidget):
         combo.addItem(_gender_display_label("male"), "male")
         combo.addItem(_gender_display_label("female"), "female")
         combo.addItem(_gender_display_label("?"), "?")
-        idx = combo.findData((value or "").strip().lower(), Qt.MatchFixedString)
+        idx = combo.findData((value or "").strip().lower(), Qt.UserRole, Qt.MatchFixedString)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         return combo
 
@@ -8827,7 +8832,7 @@ class CalibrationView(QWidget):
         combo.addItem(_tr("calibration.sexuality.bi"), "bi")
         combo.addItem(_tr("calibration.sexuality.gay"), "gay")
         combo.addItem(_tr("calibration.sexuality.straight"), "straight")
-        idx = combo.findData((value or "").strip().lower(), Qt.MatchFixedString)
+        idx = combo.findData((value or "").strip().lower(), Qt.UserRole, Qt.MatchFixedString)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         return combo
 
@@ -8837,7 +8842,7 @@ class CalibrationView(QWidget):
         combo.addItem("", "")
         for option in options:
             combo.addItem(_trait_display_label(field, option) or option, option)
-        idx = combo.findData((value or "").strip().lower(), Qt.MatchFixedString)
+        idx = combo.findData((value or "").strip().lower(), Qt.UserRole, Qt.MatchFixedString)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         return combo
 
