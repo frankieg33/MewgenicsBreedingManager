@@ -137,13 +137,15 @@ APPDATA_CONFIG_DIR = os.path.join(
 os.makedirs(APPDATA_CONFIG_DIR, exist_ok=True)
 APP_CONFIG_PATH = os.path.join(APPDATA_CONFIG_DIR, "settings.json")
 LOCALES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "locales")
+_DEFAULT_LANGUAGE = "en"
 
 _SUPPORTED_LANGUAGES = {
-    "en": "language.english",
+    _DEFAULT_LANGUAGE: "language.english",
     "zh_CN": "language.zh_cn",
+    "ru": "language.russian",
 }
 _LOCALE_CACHE: dict[str, dict[str, str]] = {}
-_CURRENT_LANGUAGE = "en"
+_CURRENT_LANGUAGE = _DEFAULT_LANGUAGE
 
 STAT_COLORS = {
     1: QColor(170, 40,  40),
@@ -519,8 +521,8 @@ def _load_locale_catalog(language: str) -> dict[str, str]:
 
 def _saved_language() -> str:
     data = _load_app_config()
-    value = data.get("language", "en")
-    return value if value in _SUPPORTED_LANGUAGES else "en"
+    value = data.get("language", _DEFAULT_LANGUAGE)
+    return value if value in _SUPPORTED_LANGUAGES else _DEFAULT_LANGUAGE
 
 
 def _set_saved_language(language: str):
@@ -533,9 +535,9 @@ def _set_saved_language(language: str):
 
 def _set_current_language(language: str):
     global _CURRENT_LANGUAGE
-    _CURRENT_LANGUAGE = language if language in _SUPPORTED_LANGUAGES else "en"
-    _load_locale_catalog("en")
-    if _CURRENT_LANGUAGE != "en":
+    _CURRENT_LANGUAGE = language if language in _SUPPORTED_LANGUAGES else _DEFAULT_LANGUAGE
+    _load_locale_catalog(_DEFAULT_LANGUAGE)
+    if _CURRENT_LANGUAGE != _DEFAULT_LANGUAGE:
         _load_locale_catalog(_CURRENT_LANGUAGE)
 
 
@@ -545,8 +547,10 @@ def _current_language() -> str:
 
 def _tr(key: str, default: Optional[str] = None, **kwargs) -> str:
     text = _load_locale_catalog(_CURRENT_LANGUAGE).get(key)
+    if text is None and _CURRENT_LANGUAGE != _DEFAULT_LANGUAGE:
+        text = _load_locale_catalog(_DEFAULT_LANGUAGE).get(key)
     if text is None:
-        text = _load_locale_catalog("en").get(key, default if default is not None else key)
+        text = default if default is not None else key
     if kwargs:
         try:
             text = text.format(**kwargs)
@@ -557,6 +561,87 @@ def _tr(key: str, default: Optional[str] = None, **kwargs) -> str:
 
 def _language_label(language: str) -> str:
     return _tr(_SUPPORTED_LANGUAGES.get(language, "language.english"))
+
+
+def _detail_breeding_button_text(is_blacklisted: bool) -> str:
+    if is_blacklisted:
+        return _tr("detail.button.exclude_from_breeding", default="✗ Exclude from Breeding")
+    return _tr("detail.button.include_in_breeding", default="✓ Include in Breeding")
+
+
+def _detail_priority_button_text(must_breed: bool) -> str:
+    if must_breed:
+        return _tr("detail.button.must_breed", default="★ Must Breed")
+    return _tr("detail.button.normal_priority", default="☆ Normal Priority")
+
+
+def _family_tree_generation_label(level: int) -> str:
+    if level == 1:
+        return _tr("family_tree.row.parents", default="PARENTS")
+    if level == 2:
+        return _tr("family_tree.row.grandparents", default="GRANDPARENTS")
+    if level == 3:
+        return _tr("family_tree.row.great_grandparents", default="GREAT-GRANDPARENTS")
+    return _tr(
+        "family_tree.row.x_great_grandparents",
+        default="{count}x GREAT-GRANDPARENTS",
+        count=level - 2,
+    )
+
+
+def _set_localized_toggle_button_label(btn: QPushButton, label_key: str, default_label: str):
+    btn.setProperty("_label_key", label_key)
+    btn.setProperty("_label_default", default_label)
+    state = _tr("common.on", default="On") if btn.isChecked() else _tr("common.off", default="Off")
+    label = _tr(label_key, default=default_label)
+    btn.setText(_tr("bulk.label_template", default="{label}: {state}", label=label, state=state))
+
+
+def _trait_display_label(field: str, value) -> str:
+    code = _trait_label_from_value(field, value)
+    if not code:
+        return ""
+    key_defaults = {
+        "low": ("trait.level.low", "Low"),
+        "average": ("trait.level.average", "Average"),
+        "high": ("trait.level.high", "High"),
+        "not": ("trait.level.not_inbred", "Not inbred"),
+        "slightly": ("trait.level.slightly_inbred", "Slightly inbred"),
+        "moderately": ("trait.level.moderately_inbred", "Moderately inbred"),
+    }
+    key, default_label = key_defaults.get(code, ("common.unknown", "Unknown"))
+    return _tr(key, default=default_label)
+
+
+def _sexuality_display_label(value: str) -> str:
+    code = (value or "").strip().lower()
+    if code in ("bi", "gay", "straight"):
+        return _tr(f"calibration.sexuality.{code}", default=code)
+    return value or ""
+
+
+def _gender_display_label(value: str) -> str:
+    code = (value or "").strip().lower()
+    if code == "male":
+        return _tr("common.gender.male", default="male")
+    if code == "female":
+        return _tr("common.gender.female", default="female")
+    if code in ("", "?", "unknown"):
+        return _tr("common.gender.unknown", default="?")
+    return value or ""
+
+
+def _font_size_offset_label(offset: int) -> str:
+    if offset > 0:
+        return f"+{offset}pt"
+    if offset < 0:
+        return f"{offset}pt"
+    return _tr("menu.settings.font_default", default="default")
+
+
+def _visual_part_label(group_key: str, default_label: Optional[str] = None) -> str:
+    fallback = default_label or _VISUAL_MUTATION_PART_LABELS.get(group_key, group_key.title())
+    return _tr(f"detail.appearance.part.{group_key}", default=fallback)
 
 
 def _localized_room_display() -> dict[str, str]:
@@ -972,12 +1057,22 @@ def _donation_candidate_base_reason(cat: "Cat") -> Optional[str]:
     top_stat = max(cat.base_stats.values()) if cat.base_stats else 0
     reasons: list[str] = []
     if total <= DONATION_SUM_THRESHOLD:
-        reasons.append(f"base sum {total} <= {DONATION_SUM_THRESHOLD}")
+        reasons.append(_tr(
+            "donation.reason.base_sum",
+            default="base sum {total} <= {threshold}",
+            total=total,
+            threshold=DONATION_SUM_THRESHOLD,
+        ))
     if top_stat <= DONATION_MAX_TOP_STAT:
-        reasons.append(f"top base stat {top_stat} <= {DONATION_MAX_TOP_STAT}")
+        reasons.append(_tr(
+            "donation.reason.top_stat",
+            default="top base stat {value} <= {threshold}",
+            value=top_stat,
+            threshold=DONATION_MAX_TOP_STAT,
+        ))
     aggression = cat.aggression
     if aggression is not None and aggression >= 0.66:
-        reasons.append("high aggression")
+        reasons.append(_tr("donation.reason.high_aggression", default="high aggression"))
     if not reasons:
         return None
     if total > DONATION_SUM_THRESHOLD and top_stat > DONATION_MAX_TOP_STAT:
@@ -990,7 +1085,11 @@ def _donation_candidate_reason(cat: "Cat") -> Optional[str]:
     if base_reason is None:
         return None
     if cat.must_breed:
-        return f"{base_reason} (currently marked Must Breed)"
+        return _tr(
+            "donation.reason.must_breed_suffix",
+            default="{reason} (currently marked Must Breed)",
+            reason=base_reason,
+        )
     return base_reason
 
 
@@ -1036,31 +1135,61 @@ def _pair_breakpoint_analysis(a: "Cat", b: "Cat", stimulation: float = 50.0) -> 
         })
 
     if locks:
-        headline = f"Locks {', '.join(locks)}"
+        headline = _tr(
+            "pair_breakpoint.headline.locks",
+            default="Locks {stats}",
+            stats=", ".join(locks),
+        )
     elif can_hit:
-        headline = f"Can hit 7 in {', '.join(can_hit)}"
+        headline = _tr(
+            "pair_breakpoint.headline.can_hit",
+            default="Can hit 7 in {stats}",
+            stats=", ".join(can_hit),
+        )
     elif near_hit:
-        headline = f"One step off in {', '.join(near_hit)}"
+        headline = _tr(
+            "pair_breakpoint.headline.near_hit",
+            default="One step off in {stats}",
+            stats=", ".join(near_hit),
+        )
     else:
-        headline = "No immediate 7 breakpoints"
+        headline = _tr("pair_breakpoint.headline.none", default="No immediate 7 breakpoints")
 
     hints: list[str] = []
     if locks:
-        hints.append(f"This pair already guarantees 7s in {', '.join(locks)}.")
+        hints.append(_tr(
+            "pair_breakpoint.hint.locks",
+            default="This pair already guarantees 7s in {stats}.",
+            stats=", ".join(locks),
+        ))
     if can_hit:
-        hints.append(f"High-roll path to 7 exists in {', '.join(can_hit)}.")
+        hints.append(_tr(
+            "pair_breakpoint.hint.can_hit",
+            default="High-roll path to 7 exists in {stats}.",
+            stats=", ".join(can_hit),
+        ))
     if near_hit:
-        hints.append(
-            f"Next breakpoint is close in {', '.join(near_hit)}: bring in another 7 or keep the strongest kitten."
-        )
+        hints.append(_tr(
+            "pair_breakpoint.hint.near_hit",
+            default="Next breakpoint is close in {stats}: bring in another 7 or keep the strongest kitten.",
+            stats=", ".join(near_hit),
+        ))
     if stalled:
-        hints.append(
-            f"These stats are still below the next breakpoint: {', '.join(stalled)}."
-        )
+        hints.append(_tr(
+            "pair_breakpoint.hint.stalled",
+            default="These stats are still below the next breakpoint: {stats}.",
+            stats=", ".join(stalled),
+        ))
     if len(upgrade_now) >= 4:
-        hints.append("Good progression pair: multiple stats can improve immediately.")
+        hints.append(_tr(
+            "pair_breakpoint.hint.good_progression",
+            default="Good progression pair: multiple stats can improve immediately.",
+        ))
     elif len(upgrade_now) <= 1:
-        hints.append("Weak progression pair: very few stats can improve from the better parent.")
+        hints.append(_tr(
+            "pair_breakpoint.hint.weak_progression",
+            default="Weak progression pair: very few stats can improve from the better parent.",
+        ))
 
     sum_lo = sum(row["lo"] for row in stat_rows)
     sum_hi = sum(row["hi"] for row in stat_rows)
@@ -1454,18 +1583,29 @@ def _appearance_group_names(cat: 'Cat', group_key: str) -> list[str]:
     if names:
         return names
     if group_key in {"fur", "body", "head"}:
-        return [f"Base {_VISUAL_MUTATION_PART_LABELS.get(group_key, group_key).title()}"]
+        return [
+            _tr(
+                "detail.appearance.base_part",
+                default="Base {part}",
+                part=_visual_part_label(group_key),
+            )
+        ]
     return []
 
 
 def _appearance_preview_text(a_names: list[str], b_names: list[str]) -> str:
     if not a_names and not b_names:
-        return "No distinct appearance data"
-    a_text = " / ".join(a_names) if a_names else "Base"
-    b_text = " / ".join(b_names) if b_names else "Base"
+        return _tr("detail.appearance.no_data", default="No distinct appearance data")
+    a_text = " / ".join(a_names) if a_names else _tr("detail.appearance.base", default="Base")
+    b_text = " / ".join(b_names) if b_names else _tr("detail.appearance.base", default="Base")
     if set(a_names) == set(b_names):
-        return f"Likely {a_text}"
-    return f"Probabilistic: {a_text} or {b_text}"
+        return _tr("detail.appearance.preview.likely", default="Likely {text}", text=a_text)
+    return _tr(
+        "detail.appearance.preview.probabilistic",
+        default="Probabilistic: {a_text} or {b_text}",
+        a_text=a_text,
+        b_text=b_text,
+    )
 
 
 def _stimulation_inheritance_weight(stimulation: float) -> float:
@@ -2291,7 +2431,7 @@ def get_grandparents(cat: Cat) -> list[Cat]:
 def can_breed(a: Cat, b: Cat) -> tuple[bool, str]:
     """Return (ok, reason). reason is non-empty only when ok is False."""
     if a is b:
-        return False, "Cannot pair a cat with itself"
+        return False, _tr("breeding.reason.same_cat", default="Cannot pair a cat with itself")
     ga = (a.gender or "?").strip().lower()
     gb = (b.gender or "?").strip().lower()
 
@@ -2301,13 +2441,29 @@ def can_breed(a: Cat, b: Cat) -> tuple[bool, str]:
     if ga != "?" and gb != "?":
         same_gender = ga == gb
         if sa == "gay" and not same_gender:
-            return False, f"{a.name} is gay — needs same-gender partner"
+            return False, _tr(
+                "breeding.reason.gay_same_gender",
+                default="{name} is gay — needs same-gender partner",
+                name=a.name,
+            )
         if sb == "gay" and not same_gender:
-            return False, f"{b.name} is gay — needs same-gender partner"
+            return False, _tr(
+                "breeding.reason.gay_same_gender",
+                default="{name} is gay — needs same-gender partner",
+                name=b.name,
+            )
         if sa == "straight" and same_gender:
-            return False, f"{a.name} is straight — needs opposite-gender partner"
+            return False, _tr(
+                "breeding.reason.straight_opposite_gender",
+                default="{name} is straight — needs opposite-gender partner",
+                name=a.name,
+            )
         if sb == "straight" and same_gender:
-            return False, f"{b.name} is straight — needs opposite-gender partner"
+            return False, _tr(
+                "breeding.reason.straight_opposite_gender",
+                default="{name} is straight — needs opposite-gender partner",
+                name=b.name,
+            )
 
     # Spidercat/unknown cats ('?') are allowed to pair with any gender.
     if ga == "?" or gb == "?":
@@ -2322,10 +2478,10 @@ def can_breed(a: Cat, b: Cat) -> tuple[bool, str]:
         return True, ""
     # Same known sex (no sexuality override)
     if ga == "female" and gb == "female":
-        return False, "Both cats are female — cannot produce offspring"
+        return False, _tr("breeding.reason.both_female", default="Both cats are female — cannot produce offspring")
     if ga == "male" and gb == "male":
-        return False, "Both cats are male — cannot produce offspring"
-    return False, "Cats have incompatible genders — cannot produce offspring"
+        return False, _tr("breeding.reason.both_male", default="Both cats are male — cannot produce offspring")
+    return False, _tr("breeding.reason.incompatible_gender", default="Cats have incompatible genders — cannot produce offspring")
 
 
 def _is_hater_pair(a: 'Cat', b: 'Cat') -> bool:
@@ -3452,22 +3608,24 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_GEN_DEPTH:
                 return str(cat.generation)
             if col == COL_AGG:
-                label = _trait_label_from_value("aggression", cat.aggression)
+                label = _trait_display_label("aggression", cat.aggression)
                 return label if label else "—"
             if col == COL_LIB:
-                label = _trait_label_from_value("libido", cat.libido)
+                label = _trait_display_label("libido", cat.libido)
                 return label if label else "—"
             if col == COL_INBRD:
-                label = _trait_label_from_value("inbredness", cat.inbredness)
+                label = _trait_display_label("inbredness", cat.inbredness)
                 return label if label else "—"
             if col == COL_SEXUALITY:
-                return getattr(cat, "sexuality", None) or ""
+                return _sexuality_display_label(getattr(cat, "sexuality", None) or "")
             if col == COL_SRC:
                 pa, pb = cat.parent_a, cat.parent_b
                 if pa is None and pb is None:
-                    return "Stray"
+                    return _tr("detail.source.stray", default="Stray")
                 def _pname(p):
-                    return p.name if p.status != "Gone" else f"{p.name} (gone)"
+                    if p.status != "Gone":
+                        return p.name
+                    return _tr("detail.source.parent_gone", default="{name} (gone)", name=p.name)
                 return " × ".join(_pname(p) for p in (pa, pb) if p is not None)
         elif role == Qt.UserRole:
             if col == COL_NAME:
@@ -3552,11 +3710,18 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_NAME:
                 notes: list[str] = []
                 if is_exceptional:
-                    notes.append(
-                        f"Exceptional breeder: base stat sum {_cat_base_sum(cat)} >= {EXCEPTIONAL_SUM_THRESHOLD}"
-                    )
+                    notes.append(_tr(
+                        "table.tooltip.exceptional_breeder",
+                        default="Exceptional breeder: base stat sum {value} >= {threshold}",
+                        value=_cat_base_sum(cat),
+                        threshold=EXCEPTIONAL_SUM_THRESHOLD,
+                    ))
                 if donation_reason:
-                    notes.append(f"Donation candidate: {donation_reason}")
+                    notes.append(_tr(
+                        "table.tooltip.donation_candidate",
+                        default="Donation candidate: {reason}",
+                        reason=donation_reason,
+                    ))
                 if notes:
                     return "\n".join(notes)
                 return cat.name
@@ -3569,9 +3734,21 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_ROOM:
                 return cat.room
             if col == COL_BL:
-                return "Excluded from breeding calculations" if cat.is_blacklisted else "Included in breeding calculations"
+                return _tr(
+                    "table.tooltip.blacklist.excluded",
+                    default="Excluded from breeding calculations",
+                ) if cat.is_blacklisted else _tr(
+                    "table.tooltip.blacklist.included",
+                    default="Included in breeding calculations",
+                )
             if col == COL_MB:
-                return "Must breed - prioritized in optimization" if cat.must_breed else "Normal breeding priority"
+                return _tr(
+                    "table.tooltip.must_breed.enabled",
+                    default="Must breed - prioritized in optimization",
+                ) if cat.must_breed else _tr(
+                    "table.tooltip.must_breed.normal",
+                    default="Normal breeding priority",
+                )
             if col == COL_MUTS and (cat.mutations or cat.defects):
                 return _mutations_tooltip(cat)
             if col == COL_ABIL and (cat.abilities or cat.passive_abilities or cat.disorders):
@@ -3579,28 +3756,63 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_RELNS and (cat.lovers or cat.haters):
                 lines: list[str] = []
                 if cat.lovers:
-                    lines.append("Lovers: " + ", ".join(other.name for other in cat.lovers))
+                    lines.append(_tr(
+                        "table.tooltip.lovers",
+                        default="Lovers: {names}",
+                        names=", ".join(other.name for other in cat.lovers),
+                    ))
                 if cat.haters:
-                    lines.append("Haters: " + ", ".join(other.name for other in cat.haters))
+                    lines.append(_tr(
+                        "table.tooltip.haters",
+                        default="Haters: {names}",
+                        names=", ".join(other.name for other in cat.haters),
+                    ))
                 return "\n".join(lines)
             if col == COL_AGG:
                 if cat.aggression is None:
-                    return "Aggression: unknown"
-                return f"Aggression: {cat.aggression:.3f} ({_trait_label_from_value('aggression', cat.aggression)})"
+                    return _tr("table.tooltip.aggression.unknown", default="Aggression: unknown")
+                return _tr(
+                    "table.tooltip.aggression.value",
+                    default="Aggression: {value:.3f} ({label})",
+                    value=cat.aggression,
+                    label=_trait_display_label("aggression", cat.aggression),
+                )
             if col == COL_LIB:
                 if cat.libido is None:
-                    return "Libido: unknown"
-                return f"Libido: {cat.libido:.3f} ({_trait_label_from_value('libido', cat.libido)})"
+                    return _tr("table.tooltip.libido.unknown", default="Libido: unknown")
+                return _tr(
+                    "table.tooltip.libido.value",
+                    default="Libido: {value:.3f} ({label})",
+                    value=cat.libido,
+                    label=_trait_display_label("libido", cat.libido),
+                )
             if col == COL_INBRD:
                 if cat.inbredness is None:
-                    return "Inbredness: unknown"
-                return f"Inbredness: {cat.inbredness:.3f} ({_trait_label_from_value('inbredness', cat.inbredness)})"
+                    return _tr("table.tooltip.inbredness.unknown", default="Inbredness: unknown")
+                return _tr(
+                    "table.tooltip.inbredness.value",
+                    default="Inbredness: {value:.3f} ({label})",
+                    value=cat.inbredness,
+                    label=_trait_display_label("inbredness", cat.inbredness),
+                )
             if col == COL_SUM:
-                notes: list[str] = [f"Base stat sum: {_cat_base_sum(cat)}"]
+                notes: list[str] = [_tr(
+                    "table.tooltip.base_stat_sum",
+                    default="Base stat sum: {value}",
+                    value=_cat_base_sum(cat),
+                )]
                 if is_exceptional:
-                    notes.append(f"Exceptional threshold: >= {EXCEPTIONAL_SUM_THRESHOLD}")
+                    notes.append(_tr(
+                        "table.tooltip.exceptional_threshold",
+                        default="Exceptional threshold: >= {threshold}",
+                        threshold=EXCEPTIONAL_SUM_THRESHOLD,
+                    ))
                 if donation_reason:
-                    notes.append(f"Donation signal: {donation_reason}")
+                    notes.append(_tr(
+                        "table.tooltip.donation_signal",
+                        default="Donation signal: {reason}",
+                        reason=donation_reason,
+                    ))
                 return "\n".join(notes)
 
         elif role == Qt.CheckStateRole:
@@ -3981,7 +4193,7 @@ class CatDetailPanel(QWidget):
                     break
 
         if self._show_lineage:
-            tree_btn = QPushButton("Family Tree…")
+            tree_btn = QPushButton(_tr("detail.button.family_tree", default="Family Tree…"))
             tree_btn.setStyleSheet(
                 "QPushButton { color:#5a8aaa; background:transparent; border:1px solid #252545;"
                 " padding:3px 8px; border-radius:4px; font-size:10px; }"
@@ -3990,7 +4202,7 @@ class CatDetailPanel(QWidget):
             id_col.addWidget(tree_btn)
 
         # Blacklist toggle button
-        blacklist_btn = QPushButton("✓ Include in Breeding" if not cat.is_blacklisted else "✗ Exclude from Breeding")
+        blacklist_btn = QPushButton(_detail_breeding_button_text(cat.is_blacklisted))
         blacklist_btn.setStyleSheet(
             "QPushButton { color:#888; background:transparent; border:1px solid #252545;"
             " padding:3px 8px; border-radius:4px; font-size:10px; }"
@@ -3999,8 +4211,8 @@ class CatDetailPanel(QWidget):
             cat.is_blacklisted = not cat.is_blacklisted
             if cat.is_blacklisted:
                 cat.must_breed = False
-            blacklist_btn.setText("✓ Include in Breeding" if not cat.is_blacklisted else "✗ Exclude from Breeding")
-            must_breed_btn.setText("★ Must Breed" if cat.must_breed else "☆ Normal Priority")
+            blacklist_btn.setText(_detail_breeding_button_text(cat.is_blacklisted))
+            must_breed_btn.setText(_detail_priority_button_text(cat.must_breed))
             mw = self.window()
             if hasattr(mw, "_source_model") and mw._source_model is not None:
                 for row in range(mw._source_model.rowCount()):
@@ -4016,7 +4228,7 @@ class CatDetailPanel(QWidget):
         id_col.addWidget(blacklist_btn)
 
         # Must breed toggle button
-        must_breed_btn = QPushButton("★ Must Breed" if cat.must_breed else "☆ Normal Priority")
+        must_breed_btn = QPushButton(_detail_priority_button_text(cat.must_breed))
         must_breed_btn.setStyleSheet(
             "QPushButton { color:#888; background:transparent; border:1px solid #252545;"
             " padding:3px 8px; border-radius:4px; font-size:10px; }"
@@ -4025,8 +4237,8 @@ class CatDetailPanel(QWidget):
             cat.must_breed = not cat.must_breed
             if cat.must_breed:
                 cat.is_blacklisted = False
-            must_breed_btn.setText("★ Must Breed" if cat.must_breed else "☆ Normal Priority")
-            blacklist_btn.setText("✓ Include in Breeding" if not cat.is_blacklisted else "✗ Exclude from Breeding")
+            must_breed_btn.setText(_detail_priority_button_text(cat.must_breed))
+            blacklist_btn.setText(_detail_breeding_button_text(cat.is_blacklisted))
             mw = self.window()
             if hasattr(mw, "_source_model") and mw._source_model is not None:
                 for row in range(mw._source_model.rowCount()):
@@ -4048,17 +4260,17 @@ class CatDetailPanel(QWidget):
         if cat.abilities or cat.passive_abilities or cat.disorders:
             root.addWidget(_vsep())
             ab = QVBoxLayout(); ab.setSpacing(4)
-            ab.addWidget(_sec("ABILITIES"))
+            ab.addWidget(_sec(_tr("detail.section.abilities", default="ABILITIES")))
             ab.addWidget(ChipRow(cat.abilities, tooltip_fn=_ability_tip))
             if cat.passive_abilities:
-                ab.addWidget(_sec("PASSIVE"))
+                ab.addWidget(_sec(_tr("detail.section.passive", default="PASSIVE")))
                 ab.addWidget(ChipRow(
                     cat.passive_abilities,
                     tooltip_fn=_ability_tip,
                     display_fn=lambda n: f"● {_mutation_display_name(n)}",
                 ))
             if cat.disorders:
-                ab.addWidget(_sec("DISORDERS"))
+                ab.addWidget(_sec(_tr("detail.section.disorders", default="DISORDERS")))
                 ab.addWidget(ChipRow(
                     cat.disorders,
                     tooltip_fn=_ability_tip,
@@ -4069,7 +4281,10 @@ class CatDetailPanel(QWidget):
                 ab.addWidget(_detail_text_block(ability_lines))
             elif not _GPAK_PATH:
                 ab.addWidget(_detail_text_block(
-                    ["Ability descriptions unavailable. Set MEWGENICS_GPAK_PATH or place resources.gpak next to the app."],
+                    [_tr(
+                        "detail.status.ability_descriptions_unavailable",
+                        default="Ability descriptions unavailable. Set MEWGENICS_GPAK_PATH or place resources.gpak next to the app.",
+                    )],
                     style=_NOTE_STYLE,
                 ))
             ab.addStretch()
@@ -4080,18 +4295,21 @@ class CatDetailPanel(QWidget):
             root.addWidget(_vsep())
             mu = QVBoxLayout(); mu.setSpacing(4)
             if cat.mutations:
-                mu.addWidget(_sec("MUTATIONS"))
+                mu.addWidget(_sec(_tr("detail.section.mutations", default="MUTATIONS")))
                 mu.addWidget(ChipRow(cat.mutation_chip_items, tooltip_fn=_ability_tip))
                 mutation_lines = _mutation_effect_lines(cat)
                 if mutation_lines:
                     mu.addWidget(_detail_text_block(mutation_lines))
                 elif not _GPAK_PATH:
                     mu.addWidget(_detail_text_block(
-                        ["Mutation effect text unavailable. Set MEWGENICS_GPAK_PATH or place resources.gpak next to the app."],
+                        [_tr(
+                            "detail.status.mutation_text_unavailable",
+                            default="Mutation effect text unavailable. Set MEWGENICS_GPAK_PATH or place resources.gpak next to the app.",
+                        )],
                         style=_NOTE_STYLE,
                     ))
             if cat.defects:
-                mu.addWidget(_sec("BIRTH DEFECTS"))
+                mu.addWidget(_sec(_tr("detail.section.birth_defects", default="BIRTH DEFECTS")))
                 mu.addWidget(_defect_chip_row(cat.defect_chip_items, tooltip_fn=_ability_tip))
             mu.addStretch()
             root.addLayout(mu)
@@ -4100,7 +4318,7 @@ class CatDetailPanel(QWidget):
         if cat.equipment:
             root.addWidget(_vsep())
             eq = QVBoxLayout(); eq.setSpacing(4)
-            eq.addWidget(_sec("EQUIPMENT"))
+            eq.addWidget(_sec(_tr("detail.section.equipment", default="EQUIPMENT")))
             eq.addWidget(ChipRow(cat.equipment))
             eq.addStretch()
             root.addLayout(eq)
@@ -4111,7 +4329,7 @@ class CatDetailPanel(QWidget):
         if parents:
             root.addWidget(_vsep())
             anc = QVBoxLayout(); anc.setSpacing(4)
-            anc.addWidget(_sec("LINEAGE"))
+            anc.addWidget(_sec(_tr("detail.section.lineage", default="LINEAGE")))
 
             p_names = " × ".join(
                 f"{p.name} ({p.gender_display})" for p in parents)
@@ -4132,10 +4350,10 @@ class CatDetailPanel(QWidget):
             root.addWidget(_vsep())
             rel = QVBoxLayout(); rel.setSpacing(4)
             if cat.lovers:
-                rel.addWidget(_sec("LOVERS"))
+                rel.addWidget(_sec(_tr("detail.section.lovers", default="LOVERS")))
                 rel.addWidget(ChipRow([c.name for c in cat.lovers]))
             if cat.haters:
-                rel.addWidget(_sec("HATERS"))
+                rel.addWidget(_sec(_tr("detail.section.haters", default="HATERS")))
                 hl = ChipRow([c.name for c in cat.haters])
                 for i in range(hl.layout().count() - 1):  # tint hater chips red
                     w = hl.layout().itemAt(i).widget()
@@ -4177,7 +4395,7 @@ class CatDetailPanel(QWidget):
                 hdr.addWidget(x)
 
         hdr.addStretch()
-        stim_lbl = QLabel("Stimulation")
+        stim_lbl = QLabel(_tr("detail.label.stimulation", default="Stimulation"))
         stim_lbl.setStyleSheet(_META_STYLE)
         hdr.addWidget(stim_lbl)
         stim_box = QSpinBox()
@@ -4232,7 +4450,7 @@ class CatDetailPanel(QWidget):
             h.setAlignment(Qt.AlignCenter)
             grid.addWidget(h, 0, j + 1)
         sum_col = len(STAT_NAMES) + 1
-        sh = QLabel("Sum")
+        sh = QLabel(_tr("table.column.sum", default="Sum"))
         sh.setStyleSheet("color:#455; font-size:9px; font-weight:bold;")
         sh.setAlignment(Qt.AlignCenter)
         grid.addWidget(sh, 0, sum_col)
@@ -4258,7 +4476,7 @@ class CatDetailPanel(QWidget):
                 lbl_hb.addWidget(name_lbl)
                 lbl_hb.addWidget(gen_lbl)
             else:
-                off_lbl = QLabel("Offspring")
+                off_lbl = QLabel(_tr("detail.label.offspring", default="Offspring"))
                 off_lbl.setStyleSheet("color:#555; font-size:10px; font-style:italic;")
                 lbl_hb.addWidget(off_lbl)
 
@@ -4307,22 +4525,22 @@ class CatDetailPanel(QWidget):
         # Inherited personality traits (based on parsed/calibrated parent values)
         trait_col = QVBoxLayout()
         trait_col.setSpacing(6)
-        trait_col.addWidget(_sec("INHERITED TRAITS"))
+        trait_col.addWidget(_sec(_tr("detail.section.inherited_traits", default="INHERITED TRAITS")))
 
         def _trait_text(field: str, value) -> str:
-            label = _trait_label_from_value(field, value)
-            return label if label else "unknown"
+            label = _trait_display_label(field, value)
+            return label if label else _tr("common.unknown", default="unknown")
 
         def _offspring_trait_text(field: str, va, vb) -> str:
             if va is None or vb is None:
-                return "unknown"
+                return _tr("common.unknown", default="unknown")
             lo = min(float(va), float(vb))
             hi = max(float(va), float(vb))
-            lo_label = _trait_label_from_value(field, lo) or "unknown"
-            hi_label = _trait_label_from_value(field, hi) or "unknown"
+            lo_label = _trait_display_label(field, lo) or _tr("common.unknown", default="unknown")
+            hi_label = _trait_display_label(field, hi) or _tr("common.unknown", default="unknown")
             if lo_label == hi_label:
                 return lo_label
-            return f"{lo_label} to {hi_label}"
+            return _tr("detail.trait.range", default="{low} to {high}", low=lo_label, high=hi_label)
 
         def _trait_chip(text: str) -> QLabel:
             chip = _chip(text)
@@ -4334,9 +4552,9 @@ class CatDetailPanel(QWidget):
             return chip
 
         for field, title in (
-            ("aggression", "Aggression"),
-            ("libido", "Libido"),
-            ("inbredness", "Inbredness"),
+            ("aggression", _tr("detail.trait.aggression", default="Aggression")),
+            ("libido", _tr("detail.trait.libido", default="Libido")),
+            ("inbredness", _tr("detail.trait.inbredness", default="Inbredness")),
         ):
             va = getattr(a, field, None)
             vb = getattr(b, field, None)
@@ -4358,7 +4576,7 @@ class CatDetailPanel(QWidget):
         # Abilities column
         ab_col = QVBoxLayout()
         ab_col.setSpacing(6)
-        ab_col.addWidget(_sec("ABILITIES"))
+        ab_col.addWidget(_sec(_tr("detail.section.abilities", default="ABILITIES")))
         for cat in (a, b):
             if cat.abilities or cat.passive_abilities or cat.disorders:
                 ab_col.addWidget(QLabel(f"{cat.name}:", styleSheet="color:#555; font-size:10px;"))
@@ -4380,13 +4598,13 @@ class CatDetailPanel(QWidget):
             mu_col = QVBoxLayout()
             mu_col.setSpacing(6)
             if a.mutations or b.mutations:
-                mu_col.addWidget(_sec("MUTATIONS"))
+                mu_col.addWidget(_sec(_tr("detail.section.mutations", default="MUTATIONS")))
                 for cat in (a, b):
                     if cat.mutations:
                         mu_col.addWidget(QLabel(f"{cat.name}:", styleSheet="color:#555; font-size:10px;"))
                         mu_col.addWidget(_wrapped_chip_block(cat.mutation_chip_items, max_per_row=3))
             if a.defects or b.defects:
-                mu_col.addWidget(_sec("BIRTH DEFECTS"))
+                mu_col.addWidget(_sec(_tr("detail.section.birth_defects", default="BIRTH DEFECTS")))
                 for cat in (a, b):
                     if cat.defects:
                         mu_col.addWidget(QLabel(f"{cat.name}:", styleSheet="color:#555; font-size:10px;"))
@@ -4412,37 +4630,48 @@ class CatDetailPanel(QWidget):
 
         inh = QVBoxLayout()
         inh.setSpacing(6)
-        inh.addWidget(_sec("INHERITANCE"))
+        inh.addWidget(_sec(_tr("detail.section.inheritance", default="INHERITANCE")))
         inh_note = QLabel(
-            f"Estimated at stimulation {int(stim)}. Parent source weighting: "
-            f"{a.name} {share_a * 100:.0f}% / {b.name} {share_b * 100:.0f}%."
+            _tr(
+                "detail.inheritance.note",
+                default="Estimated at stimulation {stim}. Parent source weighting: {a_name} {a_pct:.0f}% / {b_name} {b_pct:.0f}%.",
+                stim=int(stim),
+                a_name=a.name,
+                a_pct=share_a * 100,
+                b_name=b.name,
+                b_pct=share_b * 100,
+            )
         )
         inh_note.setStyleSheet(_META_STYLE)
         inh_note.setWordWrap(True)
         inh.addWidget(inh_note)
 
-        active_label = QLabel("Active spell candidates", styleSheet="color:#555; font-size:10px;")
+        active_label = QLabel(_tr("detail.inheritance.active_candidates", default="Active spell candidates"), styleSheet="color:#555; font-size:10px;")
         inh.addWidget(active_label)
         if active_candidates:
             inh.addWidget(_wrapped_chip_block(active_candidates, max_per_row=5))
         else:
-            inh.addWidget(QLabel("No active ability candidates.", styleSheet=_META_STYLE))
+            inh.addWidget(QLabel(_tr("detail.inheritance.no_active_candidates", default="No active ability candidates."), styleSheet=_META_STYLE))
 
-        passive_label = QLabel("Passive candidates", styleSheet="color:#555; font-size:10px;")
+        passive_label = QLabel(_tr("detail.inheritance.passive_candidates", default="Passive candidates"), styleSheet="color:#555; font-size:10px;")
         inh.addWidget(passive_label)
         if passive_candidates:
             inh.addWidget(_wrapped_chip_block(passive_candidates, max_per_row=4))
         else:
-            inh.addWidget(QLabel("No passive candidates.", styleSheet=_META_STYLE))
+            inh.addWidget(QLabel(_tr("detail.inheritance.no_passive_candidates", default="No passive candidates."), styleSheet=_META_STYLE))
 
         # ── Trait inheritance probabilities ──
         trait_probs = _trait_inheritance_probabilities(a, b, stim)
         if trait_probs:
-            inh.addWidget(QLabel("Trait inheritance chances", styleSheet="color:#555; font-size:10px;"))
+            inh.addWidget(QLabel(_tr("detail.inheritance.trait_chances", default="Trait inheritance chances"), styleSheet="color:#555; font-size:10px;"))
             prob_chips: list[tuple[str, str]] = []
             for display, category, prob, detail in trait_probs:
                 pct = prob * 100
-                cat_label = {"ability": "Spell", "passive": "Passive", "mutation": "Mutation"}.get(category, category)
+                cat_label = {
+                    "ability": _tr("detail.inheritance.category.spell", default="Spell"),
+                    "passive": _tr("detail.inheritance.category.passive", default="Passive"),
+                    "mutation": _tr("detail.inheritance.category.mutation", default="Mutation"),
+                }.get(category, category)
                 chip_text = f"{display} {pct:.0f}%"
                 tip_text = f"[{cat_label}] {detail}\n{_ability_tip(display)}" if _ability_tip(display) else f"[{cat_label}] {detail}"
                 prob_chips.append((chip_text, tip_text))
@@ -4453,7 +4682,7 @@ class CatDetailPanel(QWidget):
         disorder_ch, part_defect_ch, combined_ch = _malady_breakdown(coi)
         risk_row = QHBoxLayout()
         risk_row.setSpacing(8)
-        risk_row.addWidget(QLabel("Risk:", styleSheet="color:#555; font-size:10px;"))
+        risk_row.addWidget(QLabel(_tr("detail.risk.label", default="Risk:"), styleSheet="color:#555; font-size:10px;"))
 
         def _risk_chip(text: str, value: float) -> QLabel:
             c = _chip(text)
@@ -4468,15 +4697,16 @@ class CatDetailPanel(QWidget):
                 f" padding:2px 7px; font-size:11px; }}")
             return c
 
-        risk_row.addWidget(_risk_chip(f"Disorder {disorder_ch*100:.1f}%", disorder_ch))
-        risk_row.addWidget(_risk_chip(f"Part defect {part_defect_ch*100:.1f}%", part_defect_ch))
-        risk_row.addWidget(_risk_chip(f"Combined {combined_ch*100:.1f}%", combined_ch))
+        risk_row.addWidget(_risk_chip(_tr("detail.risk.disorder", default="Disorder {percent:.1f}%", percent=disorder_ch * 100), disorder_ch))
+        risk_row.addWidget(_risk_chip(_tr("detail.risk.part_defect", default="Part defect {percent:.1f}%", percent=part_defect_ch * 100), part_defect_ch))
+        risk_row.addWidget(_risk_chip(_tr("detail.risk.combined", default="Combined {percent:.1f}%", percent=combined_ch * 100), combined_ch))
         disorder_tip = QLabel("(?)")
         disorder_tip.setStyleSheet("color:#555; font-size:10px;")
         disorder_tip.setToolTip(
-            "Disorder: base 2%, scales above 0.20 CoI\n"
-            "Part defect: 0 below 0.05 CoI, then 1.5x CoI\n"
-            "Combined: chance of at least one occurring"
+            _tr(
+                "detail.risk.tooltip",
+                default="Disorder: base 2%, scales above 0.20 CoI\nPart defect: 0 below 0.05 CoI, then 1.5x CoI\nCombined: chance of at least one occurring",
+            )
         )
         risk_row.addWidget(disorder_tip)
         risk_row.addStretch()
@@ -4490,11 +4720,16 @@ class CatDetailPanel(QWidget):
 
         bp_col = QVBoxLayout()
         bp_col.setSpacing(6)
-        bp_col.addWidget(_sec("BREAKPOINT HINTS"))
+        bp_col.addWidget(_sec(_tr("detail.section.breakpoint_hints", default="BREAKPOINT HINTS")))
         bp_note = QLabel(
-            f"{breakpoint_info['headline']}  |  "
-            f"Sum range {breakpoint_info['sum_range'][0]}-{breakpoint_info['sum_range'][1]}  |  "
-            f"Expected avg {breakpoint_info['avg_expected']:.1f}"
+            _tr(
+                "detail.breakpoint.note",
+                default="{headline}  |  Sum range {lo}-{hi}  |  Expected avg {avg:.1f}",
+                headline=breakpoint_info["headline"],
+                lo=breakpoint_info["sum_range"][0],
+                hi=breakpoint_info["sum_range"][1],
+                avg=breakpoint_info["avg_expected"],
+            )
         )
         bp_note.setStyleSheet(_DETAIL_TEXT_STYLE)
         bp_note.setWordWrap(True)
@@ -4502,7 +4737,12 @@ class CatDetailPanel(QWidget):
 
         bp_table = QTableWidget(4, len(STAT_NAMES))
         bp_table.setHorizontalHeaderLabels(STAT_NAMES)
-        bp_table.setVerticalHeaderLabels(["Range", "Exp", "Breakpoint", "Hint"])
+        bp_table.setVerticalHeaderLabels([
+            _tr("detail.breakpoint.row.range", default="Range"),
+            _tr("detail.breakpoint.row.expected", default="Exp"),
+            _tr("detail.breakpoint.row.breakpoint", default="Breakpoint"),
+            _tr("detail.breakpoint.row.hint", default="Hint"),
+        ])
         bp_table.setSelectionMode(QAbstractItemView.NoSelection)
         bp_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         bp_table.setFocusPolicy(Qt.NoFocus)
@@ -4536,10 +4776,10 @@ class CatDetailPanel(QWidget):
             exp_item = QTableWidgetItem(f"{row['expected']:.1f}")
             status_item = QTableWidgetItem(row["status"])
             hint_text = (
-                "lock" if row["status"] == "locked"
-                else "7 now" if row["status"] == "can hit 7"
-                else "next up" if row["status"] == "one step off"
-                else "needs help"
+                _tr("detail.breakpoint.hint.lock", default="lock") if row["status"] == "locked"
+                else _tr("detail.breakpoint.hint.seven_now", default="7 now") if row["status"] == "can hit 7"
+                else _tr("detail.breakpoint.hint.next_up", default="next up") if row["status"] == "one step off"
+                else _tr("detail.breakpoint.hint.needs_help", default="needs help")
             )
             hint_item = QTableWidgetItem(hint_text)
             for item in (range_item, exp_item, status_item, hint_item):
@@ -4566,20 +4806,20 @@ class CatDetailPanel(QWidget):
 
         app_col = QVBoxLayout()
         app_col.setSpacing(6)
-        app_col.addWidget(_sec("APPEARANCE PREVIEW"))
-        app_note = QLabel("Probabilistic preview from parent coat/body/part data.")
+        app_col.addWidget(_sec(_tr("detail.section.appearance_preview", default="APPEARANCE PREVIEW")))
+        app_note = QLabel(_tr("detail.appearance.note", default="Probabilistic preview from parent coat/body/part data."))
         app_note.setStyleSheet(_META_STYLE)
         app_note.setWordWrap(True)
         app_col.addWidget(app_note)
 
         appearance_groups = [
-            ("fur", "Fur"),
-            ("body", "Body"),
-            ("head", "Head"),
-            ("tail", "Tail"),
-            ("ears", "Ears"),
-            ("eyes", "Eyes"),
-            ("mouth", "Mouth"),
+            ("fur", _tr("detail.appearance.part.fur", default="Fur")),
+            ("body", _tr("detail.appearance.part.body", default="Body")),
+            ("head", _tr("detail.appearance.part.head", default="Head")),
+            ("tail", _tr("detail.appearance.part.tail", default="Tail")),
+            ("ears", _tr("detail.appearance.part.ears", default="Ears")),
+            ("eyes", _tr("detail.appearance.part.eyes", default="Eyes")),
+            ("mouth", _tr("detail.appearance.part.mouth", default="Mouth")),
         ]
         shown_preview = False
         for group_key, title in appearance_groups:
@@ -4591,16 +4831,16 @@ class CatDetailPanel(QWidget):
             row = QHBoxLayout()
             row.setSpacing(5)
             row.addWidget(QLabel(f"{title}:", styleSheet="color:#555; font-size:10px;"))
-            row.addWidget(_chip(" / ".join(a_names) if a_names else "Base"))
+            row.addWidget(_chip(" / ".join(a_names) if a_names else _tr("detail.appearance.base", default="Base")))
             row.addWidget(QLabel("x", styleSheet="color:#444; font-size:10px;"))
-            row.addWidget(_chip(" / ".join(b_names) if b_names else "Base"))
+            row.addWidget(_chip(" / ".join(b_names) if b_names else _tr("detail.appearance.base", default="Base")))
             row.addWidget(QLabel("->", styleSheet="color:#666; font-size:10px;"))
             row.addWidget(_chip(_appearance_preview_text(a_names, b_names)))
             row.addStretch()
             app_col.addLayout(row)
 
         if not shown_preview:
-            app_col.addWidget(QLabel("No distinct parent appearance data detected.", styleSheet=_META_STYLE))
+            app_col.addWidget(QLabel(_tr("detail.appearance.none", default="No distinct parent appearance data detected."), styleSheet=_META_STYLE))
 
         app_col.addStretch()
         bot.addLayout(app_col, 1)
@@ -4610,24 +4850,28 @@ class CatDetailPanel(QWidget):
         if self._show_lineage:
             lc = QVBoxLayout()
             lc.setSpacing(3)
-            lc.addWidget(_sec("LINEAGE"))
+            lc.addWidget(_sec(_tr("detail.section.lineage", default="LINEAGE")))
             common    = find_common_ancestors(a, b)
             is_direct = (a in get_parents(b) or b in get_parents(a))
             is_haters = (b in getattr(a, 'haters', []) or a in getattr(b, 'haters', []))
 
             if is_haters:
-                lc.addWidget(QLabel("⚠  These cats hate each other", styleSheet=_WARN_STYLE))
+                lc.addWidget(QLabel(_tr("detail.lineage.haters", default="⚠  These cats hate each other"), styleSheet=_WARN_STYLE))
             if is_direct:
-                lc.addWidget(QLabel("⚠  Direct parent/offspring", styleSheet=_WARN_STYLE))
+                lc.addWidget(QLabel(_tr("detail.lineage.direct_parent_offspring", default="⚠  Direct parent/offspring"), styleSheet=_WARN_STYLE))
             elif common:
                 lc.addWidget(QLabel(
-                    f"⚠  {len(common)} shared ancestor{'s' if len(common) > 1 else ''}: "
-                    + "  ·  ".join(c.short_name for c in common[:6]),
+                    _tr(
+                        "detail.lineage.shared_ancestors",
+                        default="⚠  {count} shared ancestors: {names}",
+                        count=len(common),
+                        names="  ·  ".join(c.short_name for c in common[:6]),
+                    ),
                     styleSheet=_WARN_STYLE))
             elif get_parents(a) or get_parents(b):
-                lc.addWidget(QLabel("✓  No shared ancestors", styleSheet=_SAFE_STYLE))
+                lc.addWidget(QLabel(_tr("detail.lineage.no_shared_ancestors", default="✓  No shared ancestors"), styleSheet=_SAFE_STYLE))
             else:
-                lc.addWidget(QLabel("—  Lineage unknown", styleSheet=_META_STYLE))
+                lc.addWidget(QLabel(_tr("detail.lineage.unknown", default="—  Lineage unknown"), styleSheet=_META_STYLE))
 
             lc.addStretch()
             bot.addLayout(lc)
@@ -4808,7 +5052,15 @@ class FamilyTreeBrowserView(QWidget):
 
         self._search.textChanged.connect(self._refresh_list)
         self._list.currentItemChanged.connect(self._on_current_item_changed)
+        self.retranslate_ui()
         _enforce_min_font_in_widget_tree(self)
+
+    def retranslate_ui(self):
+        self._cats_label.setText(_tr("family_tree.list_title", default="Cats"))
+        self._all_btn.setText(_tr("family_tree.filter.all", default="All"))
+        self._alive_btn.setText(_tr("family_tree.filter.alive", default="Alive"))
+        self._search.setPlaceholderText(_tr("family_tree.search_placeholder", default="Search cat name…"))
+        self._refresh_list()
 
     def set_cats(self, cats: list[Cat]):
         selected_key = None
@@ -4995,7 +5247,11 @@ class FamilyTreeBrowserView(QWidget):
 
         # Dynamic row-label gutter width: based on the longest visible label and
         # current font metrics, so it tracks zoom/font-size changes.
-        label_texts = ["SELF", "CHILDREN", "GRANDCHILDREN"] + [
+        label_texts = [
+            _tr("family_tree.row.self", default="SELF"),
+            _tr("family_tree.row.children", default="CHILDREN"),
+            _tr("family_tree.row.grandchildren", default="GRANDCHILDREN"),
+        ] + [
             _ancestor_row_label(i) for i in range(1, len(ancestor_levels) + 1)
         ]
         label_font = QFont(self.font())
@@ -5019,23 +5275,28 @@ class FamilyTreeBrowserView(QWidget):
             add_generation_row(_ancestor_row_label(idx), level_nodes[:12])
             if len(level_nodes) > 12:
                 root.addWidget(QLabel(
-                    f"… and {len(level_nodes)-12} more in {_ancestor_row_label(idx)}",
+                    _tr(
+                        "family_tree.more_in_generation",
+                        default="… and {count} more in {label}",
+                        count=len(level_nodes) - 12,
+                        label=_ancestor_row_label(idx),
+                    ),
                     styleSheet="color:#555; font-size:10px;"))
             add_arrow()
-        add_generation_row("SELF", [cat], highlight_self=True)
+        add_generation_row(_tr("family_tree.row.self", default="SELF"), [cat], highlight_self=True)
 
         if children:
             add_arrow()
-            add_generation_row("CHILDREN", children[:10])
+            add_generation_row(_tr("family_tree.row.children", default="CHILDREN"), children[:10])
             if len(children) > 10:
-                root.addWidget(QLabel(f"… and {len(children)-10} more children", styleSheet="color:#555; font-size:10px;"))
+                root.addWidget(QLabel(_tr("family_tree.more_children_short", default="… and {count} more children", count=len(children) - 10), styleSheet="color:#555; font-size:10px;"))
         if grandchildren:
             add_arrow()
-            add_generation_row("GRANDCHILDREN", grandchildren[:10])
+            add_generation_row(_tr("family_tree.row.grandchildren", default="GRANDCHILDREN"), grandchildren[:10])
             if len(grandchildren) > 10:
-                root.addWidget(QLabel(f"… and {len(grandchildren)-10} more grandchildren", styleSheet="color:#555; font-size:10px;"))
+                root.addWidget(QLabel(_tr("family_tree.more_grandchildren_short", default="… and {count} more grandchildren", count=len(grandchildren) - 10), styleSheet="color:#555; font-size:10px;"))
         if not any([ancestor_levels, children, grandchildren]):
-            root.addWidget(QLabel("No known lineage data for this cat yet.", styleSheet="color:#666; font-size:12px;"))
+            root.addWidget(QLabel(_tr("family_tree.no_lineage", default="No known lineage data for this cat yet."), styleSheet="color:#666; font-size:12px;"))
 
         root.addStretch()
         _enforce_min_font_in_widget_tree(self._tree_content)
@@ -5365,8 +5626,21 @@ class BreedingPartnersView(QWidget):
         root.addWidget(self._table, 1)
 
         self._search.textChanged.connect(self._refresh_table)
+        self.retranslate_ui()
         _enforce_min_font_in_widget_tree(self)
         self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self._title.setText(_tr("breeding_partners.title", default="Breeding Partners"))
+        self._search.setPlaceholderText(_tr("breeding_partners.search_placeholder", default="Search partner names or rooms…"))
+        self._table.setHorizontalHeaderLabels([
+            _tr("breeding_partners.table.cat_a", default="Cat A"),
+            _tr("breeding_partners.table.cat_b", default="Cat B"),
+            _tr("breeding_partners.table.room_a", default="Room A"),
+            _tr("breeding_partners.table.room_b", default="Room B"),
+            _tr("breeding_partners.table.status", default="Status"),
+        ])
+        self._refresh_table()
 
     def set_cats(self, cats: list[Cat]):
         self._cats = cats
@@ -5458,15 +5732,14 @@ class RoomOptimizerView(QWidget):
     """View for optimizing cat room distribution to maximize breeding outcomes."""
 
     @staticmethod
-    def _set_toggle_button_label(btn: QPushButton, label: str):
-        state = "On" if btn.isChecked() else "Off"
-        btn.setText(f"{label}: {state}")
+    def _set_toggle_button_label(btn: QPushButton, label_key: str, default_label: str):
+        _set_localized_toggle_button_label(btn, label_key, default_label)
 
     @staticmethod
-    def _bind_persistent_toggle(btn: QPushButton, label: str, key: str):
-        RoomOptimizerView._set_toggle_button_label(btn, label)
+    def _bind_persistent_toggle(btn: QPushButton, label_key: str, key: str, default_label: str):
+        RoomOptimizerView._set_toggle_button_label(btn, label_key, default_label)
         btn.toggled.connect(lambda checked: _set_optimizer_flag(key, checked))
-        btn.toggled.connect(lambda _: RoomOptimizerView._set_toggle_button_label(btn, label))
+        btn.toggled.connect(lambda _: RoomOptimizerView._set_toggle_button_label(btn, label_key, default_label))
 
     def _set_mode_button_text(self, enabled: bool):
         key = "room_optimizer.mode_family" if enabled else "room_optimizer.mode_pair"
@@ -5585,52 +5858,43 @@ class RoomOptimizerView(QWidget):
             "QPushButton:checked { background:#2a4a5a; color:#ddd; border:1px solid #4a6a7a; }"
             "QPushButton:hover { background:#252545; color:#ddd; }"
         )
-        self._bind_persistent_toggle(self._minimize_variance_checkbox, "Minimize Variance", "minimize_variance")
+        self._bind_persistent_toggle(self._minimize_variance_checkbox, "room_optimizer.toggle.minimize_variance", "minimize_variance", "Minimize Variance")
         controls.addWidget(self._minimize_variance_checkbox)
 
         self._avoid_lovers_checkbox = QPushButton()
         self._avoid_lovers_checkbox.setCheckable(True)
         self._avoid_lovers_checkbox.setChecked(_saved_optimizer_flag("avoid_lovers", True))
-        self._avoid_lovers_checkbox.setToolTip(
-            "If enabled, cats that already have lovers will not be paired with other cats."
-        )
         self._avoid_lovers_checkbox.setStyleSheet(
             "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a; "
             "border-radius:4px; padding:6px 12px; font-size:11px; }"
             "QPushButton:checked { background:#5a3a2a; color:#ddd; border:1px solid #8a5a4a; }"
             "QPushButton:hover { background:#252545; color:#ddd; }"
         )
-        self._bind_persistent_toggle(self._avoid_lovers_checkbox, "Avoid Lovers", "avoid_lovers")
+        self._bind_persistent_toggle(self._avoid_lovers_checkbox, "room_optimizer.toggle.avoid_lovers", "avoid_lovers", "Avoid Lovers")
         controls.addWidget(self._avoid_lovers_checkbox)
 
         self._prefer_low_aggression_checkbox = QPushButton()
         self._prefer_low_aggression_checkbox.setCheckable(True)
         self._prefer_low_aggression_checkbox.setChecked(_saved_optimizer_flag("prefer_low_aggression", True))
-        self._prefer_low_aggression_checkbox.setToolTip(
-            "If enabled, optimizer gives extra weight to lower-aggression cats."
-        )
         self._prefer_low_aggression_checkbox.setStyleSheet(
             "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a; "
             "border-radius:4px; padding:6px 12px; font-size:11px; }"
             "QPushButton:checked { background:#4a2a2a; color:#ddd; border:1px solid #7a4a4a; }"
             "QPushButton:hover { background:#252545; color:#ddd; }"
         )
-        self._bind_persistent_toggle(self._prefer_low_aggression_checkbox, "Prefer Low Aggression", "prefer_low_aggression")
+        self._bind_persistent_toggle(self._prefer_low_aggression_checkbox, "room_optimizer.toggle.prefer_low_aggression", "prefer_low_aggression", "Prefer Low Aggression")
         controls.addWidget(self._prefer_low_aggression_checkbox)
 
         self._prefer_high_libido_checkbox = QPushButton()
         self._prefer_high_libido_checkbox.setCheckable(True)
         self._prefer_high_libido_checkbox.setChecked(_saved_optimizer_flag("prefer_high_libido", True))
-        self._prefer_high_libido_checkbox.setToolTip(
-            "If enabled, optimizer gives extra weight to higher-libido cats."
-        )
         self._prefer_high_libido_checkbox.setStyleSheet(
             "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a; "
             "border-radius:4px; padding:6px 12px; font-size:11px; }"
             "QPushButton:checked { background:#2a4a36; color:#ddd; border:1px solid #4a7a5a; }"
             "QPushButton:hover { background:#252545; color:#ddd; }"
         )
-        self._bind_persistent_toggle(self._prefer_high_libido_checkbox, "Prefer High Libido", "prefer_high_libido")
+        self._bind_persistent_toggle(self._prefer_high_libido_checkbox, "room_optimizer.toggle.prefer_high_libido", "prefer_high_libido", "Prefer High Libido")
         controls.addWidget(self._prefer_high_libido_checkbox)
 
         controls.addSpacing(16)
@@ -5696,19 +5960,57 @@ class RoomOptimizerView(QWidget):
         # Tab 1: Breeding Pairs (existing detail panel)
         self._details_pane = RoomOptimizerDetailPanel()
         self._details_pane._navigate_to_cat_callback = self._navigate_to_cat_from_breeding_pairs
-        self._bottom_tabs.addTab(self._details_pane, "Breeding Pairs")
+        self._bottom_tabs.addTab(self._details_pane, "")
 
         # Tab 2: Cat Locator
         self._cat_locator = RoomOptimizerCatLocator()
-        self._bottom_tabs.addTab(self._cat_locator, "Cat Locator")
+        self._bottom_tabs.addTab(self._cat_locator, "")
 
         self._splitter.addWidget(self._bottom_tabs)
         self._splitter.setSizes([180, 420])
 
         root.addWidget(self._splitter, 1)
 
+        self.retranslate_ui()
         _enforce_min_font_in_widget_tree(self)
         self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self._title.setText(_tr("room_optimizer.title", default="Room Distribution Optimizer"))
+        self._min_stats_label.setText(_tr("room_optimizer.min_base_stats", default="Min base stats:"))
+        self._max_risk_label.setText(_tr("room_optimizer.max_inbreeding_risk", default="Max inbreeding risk %:"))
+        self._optimize_btn.setText(_tr("room_optimizer.calculate", default="Calculate Optimal Distribution"))
+        self._mode_toggle_btn.setToolTip(_tr(
+            "room_optimizer.mode.tooltip",
+            default="Toggle optimizer mode:\nPair Quality = best pair scoring\nFamily Separation = spread family lines across rooms",
+        ))
+        self._avoid_lovers_checkbox.setToolTip(_tr(
+            "room_optimizer.toggle.avoid_lovers.tooltip",
+            default="If enabled, cats that already have lovers will not be paired with other cats.",
+        ))
+        self._prefer_low_aggression_checkbox.setToolTip(_tr(
+            "room_optimizer.toggle.prefer_low_aggression.tooltip",
+            default="If enabled, optimizer gives extra weight to lower-aggression cats.",
+        ))
+        self._prefer_high_libido_checkbox.setToolTip(_tr(
+            "room_optimizer.toggle.prefer_high_libido.tooltip",
+            default="If enabled, optimizer gives extra weight to higher-libido cats.",
+        ))
+        self._table.setHorizontalHeaderLabels([
+            _tr("table.column.room", default="Room"),
+            _tr("room_optimizer.table.cats_to_place", default="Cats to Place"),
+            _tr("room_optimizer.table.expected_pairs", default="Expected Pairs"),
+            _tr("room_optimizer.table.avg_stats", default="Avg Stats"),
+            _tr("table.column.risk", default="Risk%"),
+            _tr("common.details", default="Details"),
+        ])
+        self._bottom_tabs.setTabText(self._bottom_tabs.indexOf(self._details_pane), _tr("room_optimizer.tab.breeding_pairs", default="Breeding Pairs"))
+        self._bottom_tabs.setTabText(self._bottom_tabs.indexOf(self._cat_locator), _tr("room_optimizer.tab.cat_locator", default="Cat Locator"))
+        self._details_pane.retranslate_ui()
+        self._cat_locator.retranslate_ui()
+        self._on_optimizer_mode_toggled(self._mode_toggle_btn.isChecked())
+        if not self._summary.text():
+            self._summary.setText(_tr("room_optimizer.summary.idle", default="Run the optimizer to see cat placements."))
 
     def _on_optimizer_mode_toggled(self, enabled: bool):
         self._set_mode_button_text(enabled)
@@ -5916,11 +6218,19 @@ class RoomOptimizerView(QWidget):
             details_lines = []
             for p in room_pairs[:3]:
                 details_lines.append(
-                    f"{p['cat_a']} × {p['cat_b']} "
-                    f"(stats: {p['avg_stats']:.0f}, risk: {p['risk']:.0f}%)"
+                    _tr(
+                        "room_optimizer.result.detail_line",
+                        default="{cat_a} × {cat_b} (stats: {stats:.0f}, risk: {risk:.0f}%)",
+                        cat_a=p["cat_a"],
+                        cat_b=p["cat_b"],
+                        stats=p["avg_stats"],
+                        risk=p["risk"],
+                    )
                 )
             if len(room_pairs) > 3:
-                details_lines.append(f"... and {len(room_pairs) - 3} more")
+                details_lines.append(
+                    _tr("room_optimizer.result.more_pairs", default="... and {count} more", count=len(room_pairs) - 3)
+                )
             details_item = QTableWidgetItem("; ".join(details_lines))
 
             room_item.setData(Qt.UserRole, {
@@ -5944,11 +6254,11 @@ class RoomOptimizerView(QWidget):
         if excluded_rows:
             excluded_names = [r["name"] for r in excluded_rows]
             self._table.insertRow(row_idx)
-            excluded_room_item = QTableWidgetItem("Excluded")
+            excluded_room_item = QTableWidgetItem(_tr("room_optimizer.row.excluded", default="Excluded"))
             excluded_room_item.setTextAlignment(Qt.AlignCenter)
             excluded_room_item.setForeground(QBrush(QColor(170, 120, 120)))
             excluded_room_item.setData(Qt.UserRole, {
-                "room": "Excluded",
+                "room": _tr("room_optimizer.row.excluded", default="Excluded"),
                 "cats": excluded_names,
                 "total_pairs": 0,
                 "avg_stats": 0.0,
@@ -5958,32 +6268,54 @@ class RoomOptimizerView(QWidget):
                 "pairs": [],
             })
             self._table.setItem(row_idx, 0, excluded_room_item)
-            self._table.setItem(row_idx, 1, QTableWidgetItem(f"{len(excluded_rows)} excluded cats"))
+            self._table.setItem(
+                row_idx,
+                1,
+                QTableWidgetItem(_tr("room_optimizer.row.excluded_cats", default="{count} excluded cats", count=len(excluded_rows))),
+            )
             for col in (2, 3, 4):
                 dash = QTableWidgetItem("—")
                 dash.setTextAlignment(Qt.AlignCenter)
                 self._table.setItem(row_idx, col, dash)
-            self._table.setItem(row_idx, 5, QTableWidgetItem("Excluded from optimizer breeding calculations"))
+            self._table.setItem(row_idx, 5, QTableWidgetItem(_tr("room_optimizer.row.excluded_details", default="Excluded from optimizer breeding calculations")))
             row_idx += 1
 
-        filter_info = [f"mode: {'family separation' if mode_family else 'pair quality'}"]
+        filter_info = [
+            _tr(
+                "room_optimizer.filter.mode",
+                default="mode: {mode}",
+                mode=_tr(
+                    "room_optimizer.filter.mode.family_separation",
+                    default="family separation",
+                ) if mode_family else _tr("room_optimizer.filter.mode.pair_quality", default="pair quality"),
+            )
+        ]
         if min_stats > 0:
-            filter_info.append(f"min stats: {min_stats}")
+            filter_info.append(_tr("room_optimizer.filter.min_stats", default="min stats: {value}", value=min_stats))
         if max_risk < 100:
-            filter_info.append(f"max risk: {max_risk}%")
+            filter_info.append(_tr("room_optimizer.filter.max_risk", default="max risk: {value}%", value=max_risk))
         if (not mode_family) and minimize_variance:
-            filter_info.append("variance: on")
+            filter_info.append(_tr("room_optimizer.filter.variance_on", default="variance: on"))
         if prefer_low_aggression:
-            filter_info.append("prefer low aggression")
+            filter_info.append(_tr("room_optimizer.filter.prefer_low_aggression", default="prefer low aggression"))
         if prefer_high_libido:
-            filter_info.append("prefer high libido")
+            filter_info.append(_tr("room_optimizer.filter.prefer_high_libido", default="prefer high libido"))
         if avoid_lovers:
-            filter_info.append("avoid lovers")
-        filter_str = f"  |  Filters: {', '.join(filter_info)}" if filter_info else ""
+            filter_info.append(_tr("room_optimizer.filter.avoid_lovers", default="avoid lovers"))
+        filter_str = (
+            _tr("room_optimizer.filter.summary", default="  |  Filters: {filters}", filters=", ".join(filter_info))
+            if filter_info else ""
+        )
 
         self._summary.setText(
-            f"Optimized {total_assigned} cats into {row_idx} rooms  |  "
-            f"{total_pairs} total breeding pairs{filter_str}"
+            _tr(
+                "room_optimizer.summary.optimized",
+                default="Optimized {total_assigned} cats into {room_count} rooms  |  {total_pairs} total breeding pairs{filter_str}",
+                total_assigned=total_assigned,
+                room_count=row_idx,
+                total_pairs=total_pairs,
+                filter_str=filter_str,
+            )
         )
 
 
@@ -6020,7 +6352,7 @@ class RoomOptimizerWorker(QThread):
             alive_cats = [c for c in alive_cats if sum(c.base_stats.values()) >= min_stats]
 
         if len(alive_cats) < 2:
-            self.finished.emit({"error": "Not enough cats to optimize"})
+            self.finished.emit({"error": _tr("room_optimizer.error.not_enough_cats", default="Not enough cats to optimize")})
             return
 
         stat_sum = {cat.db_key: sum(cat.base_stats.values()) for cat in alive_cats}
@@ -6171,8 +6503,11 @@ class RoomOptimizerWorker(QThread):
                 if c.room and c.room != "Adventure" and c.status == "In House":
                     actual_rooms.add(c.room)
             n_priority = max(len(actual_rooms) - 1, 1)
-            priority_rooms = [f"Priority {i+1}" for i in range(n_priority)]
-            fallback_room = "Fallback"
+            priority_rooms = [
+                _tr("room_optimizer.priority_room", default="Priority {index}", index=i + 1)
+                for i in range(n_priority)
+            ]
+            fallback_room = _tr("room_optimizer.fallback_room", default="Fallback")
             all_rooms = priority_rooms + [fallback_room]
             room_assignments = {room: [] for room in all_rooms}
 
@@ -6269,7 +6604,7 @@ class RoomOptimizerWorker(QThread):
         for room_idx, room in enumerate(all_rooms):
             assigned_room_label = ROOM_DISPLAY.get(room, room)
             for c in room_assignments[room]:
-                current = c.room_display or c.status or "?"
+                current = c.room_display or STATUS_ABBREV.get(c.status, c.status) or _tr("common.unknown", default="?")
                 needs_move = c.status != "In House" or c.room_display != assigned_room_label
                 locator_data.append({
                     "name": c.name, "gender_display": c.gender_display,
@@ -6317,9 +6652,9 @@ class RoomOptimizerWorker(QThread):
                 "name": f"{c.name} ({c.gender_display})",
                 "stats": dict(c.base_stats), "sum": _cat_base_sum(c),
                 "traits": {
-                    "aggression": _trait_label_from_value("aggression", c.aggression) or "unknown",
-                    "libido":     _trait_label_from_value("libido",     c.libido)     or "unknown",
-                    "inbredness": _trait_label_from_value("inbredness", c.inbredness) or "unknown",
+                    "aggression": _trait_display_label("aggression", c.aggression) or _tr("common.unknown", default="unknown"),
+                    "libido":     _trait_display_label("libido", c.libido) or _tr("common.unknown", default="unknown"),
+                    "inbredness": _trait_display_label("inbredness", c.inbredness) or _tr("common.unknown", default="unknown"),
                 },
             }
             for c in excluded_cats
@@ -6366,12 +6701,11 @@ class RoomOptimizerCatLocator(QWidget):
         root.setContentsMargins(10, 8, 10, 8)
         root.setSpacing(6)
 
-        self._summary = QLabel("Run the optimizer to see cat placements.")
+        self._summary = QLabel()
         self._summary.setStyleSheet("color:#888; font-size:11px;")
         root.addWidget(self._summary)
 
         self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(["Cat", "Age", "Currently In", "Move To", "Action"])
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -6407,6 +6741,17 @@ class RoomOptimizerCatLocator(QWidget):
             }
         """)
         root.addWidget(self._table, 1)
+        self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self._summary.setText(_tr("room_optimizer.locator.summary_idle", default="Run the optimizer to see cat placements."))
+        self._table.setHorizontalHeaderLabels([
+            _tr("safe_breeding.table.cat", default="Cat"),
+            _tr("table.column.age", default="Age"),
+            _tr("common.currently_in", default="Currently In"),
+            _tr("common.move_to", default="Move To"),
+            _tr("common.action", default="Action"),
+        ])
 
     def show_assignments(self, all_assignments: list[dict]):
         """
@@ -6425,7 +6770,7 @@ class RoomOptimizerCatLocator(QWidget):
             name_item = QTableWidgetItem(f"{info['name']} ({info['gender_display']})")
             name_item.setData(Qt.UserRole, info.get("db_key"))
             name_item.setForeground(QColor("#5b9bd5"))
-            name_item.setToolTip("Click to jump to this cat in Alive Cats view")
+            name_item.setToolTip(_tr("common.tooltip.jump_to_alive", default="Click to jump to this cat in Alive Cats view"))
 
             age_val = info.get("age")
             if isinstance(age_val, (int, float)):
@@ -6460,12 +6805,12 @@ class RoomOptimizerCatLocator(QWidget):
             needs_move = info.get("needs_move", False)
             if needs_move:
                 moves_needed += 1
-                action_item = QTableWidgetItem("MOVE")
+                action_item = QTableWidgetItem(_tr("common.action_move", default="MOVE"))
                 action_item.setTextAlignment(Qt.AlignCenter)
                 action_item.setForeground(QBrush(QColor(216, 181, 106)))
                 action_item.setBackground(QBrush(row_bg))
             else:
-                action_item = QTableWidgetItem("OK")
+                action_item = QTableWidgetItem(_tr("common.ok", default="OK"))
                 action_item.setTextAlignment(Qt.AlignCenter)
                 action_item.setForeground(QBrush(QColor(98, 194, 135)))
                 action_item.setBackground(QBrush(row_bg))
@@ -6482,9 +6827,13 @@ class RoomOptimizerCatLocator(QWidget):
 
         total = len(all_assignments)
         stay = total - moves_needed
-        self._summary.setText(
-            f"{total} cats  |  {moves_needed} need to move  |  {stay} already in place"
-        )
+        self._summary.setText(_tr(
+            "room_optimizer.locator.summary",
+            default="{total} cats  |  {moves_needed} need to move  |  {stay} already in place",
+            total=total,
+            moves_needed=moves_needed,
+            stay=stay,
+        ))
 
     def _on_cat_clicked(self, row: int, col: int):
         if col != self.COL_CAT:
@@ -6498,7 +6847,7 @@ class RoomOptimizerCatLocator(QWidget):
 
     def clear(self):
         self._table.setRowCount(0)
-        self._summary.setText("Run the optimizer to see cat placements.")
+        self._summary.setText(_tr("room_optimizer.locator.summary_idle", default="Run the optimizer to see cat placements."))
 
 
 class RoomOptimizerDetailPanel(QWidget):
@@ -6512,12 +6861,12 @@ class RoomOptimizerDetailPanel(QWidget):
         # Header with summary label and best pairs toggle
         hdr = QHBoxLayout()
         hdr.setSpacing(8)
-        self._summary = QLabel("Select a room to see pair details.")
+        self._summary = QLabel()
         self._summary.setStyleSheet("color:#aaa; font-size:12px;")
         self._summary.setWordWrap(True)
         hdr.addWidget(self._summary, 1)
 
-        self._best_pairs_btn = QPushButton("All Pairs")
+        self._best_pairs_btn = QPushButton()
         self._best_pairs_btn.setCheckable(True)
         self._best_pairs_btn.setChecked(False)
         self._best_pairs_btn.setFixedWidth(90)
@@ -6527,7 +6876,6 @@ class RoomOptimizerDetailPanel(QWidget):
             "QPushButton:hover { background:#252555; }"
             "QPushButton:checked { background:#3a5a7a; color:#fff; }"
         )
-        self._best_pairs_btn.setToolTip("Best Pairs: one unique match per cat\nAll Pairs: every valid combination")
         self._best_pairs_btn.clicked.connect(self._on_toggle_best_pairs)
         hdr.addWidget(self._best_pairs_btn)
 
@@ -6537,9 +6885,6 @@ class RoomOptimizerDetailPanel(QWidget):
         self._navigate_to_cat_callback = None  # Callback to navigate to a cat by name
 
         self._pairs_table = QTableWidget(0, 13)
-        self._pairs_table.setHorizontalHeaderLabels([
-            "Cat A", "Cat B", "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK", "Sum", "Avg", "Inbred Risk", "Rank"
-        ])
         self._pairs_table.verticalHeader().setVisible(False)
         self._pairs_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._pairs_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -6575,9 +6920,6 @@ class RoomOptimizerDetailPanel(QWidget):
         root.addWidget(self._pairs_table, 1)
 
         self._excluded_table = QTableWidget(0, 12)
-        self._excluded_table.setHorizontalHeaderLabels([
-            "Cat", "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK", "Sum", "Agg", "Lib", "Inbred"
-        ])
         self._excluded_table.verticalHeader().setVisible(False)
         self._excluded_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._excluded_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -6606,6 +6948,36 @@ class RoomOptimizerDetailPanel(QWidget):
             }
         """)
         root.addWidget(self._excluded_table, 1)
+        self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self._summary.setText(_tr("room_optimizer.detail.summary_idle", default="Select a room to see pair details."))
+        self._best_pairs_btn.setText(
+            _tr("room_optimizer.detail.best_pairs", default="Best Pairs")
+            if self._best_pairs_btn.isChecked()
+            else _tr("room_optimizer.detail.all_pairs", default="All Pairs")
+        )
+        self._best_pairs_btn.setToolTip(_tr(
+            "room_optimizer.detail.best_pairs.tooltip",
+            default="Best Pairs: one unique match per cat\nAll Pairs: every valid combination",
+        ))
+        self._pairs_table.setHorizontalHeaderLabels([
+            _tr("room_optimizer.detail.table.cat_a", default="Cat A"),
+            _tr("room_optimizer.detail.table.cat_b", default="Cat B"),
+            "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK",
+            _tr("table.column.sum", default="Sum"),
+            _tr("room_optimizer.detail.table.avg", default="Avg"),
+            _tr("room_optimizer.detail.table.inbred_risk", default="Inbred Risk"),
+            _tr("room_optimizer.detail.table.rank", default="Rank"),
+        ])
+        self._excluded_table.setHorizontalHeaderLabels([
+            _tr("safe_breeding.table.cat", default="Cat"),
+            "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK",
+            _tr("table.column.sum", default="Sum"),
+            _tr("table.column.aggression", default="Agg"),
+            _tr("table.column.libido", default="Lib"),
+            _tr("table.column.inbred", default="Inbred"),
+        ])
 
     def _on_pair_cell_clicked(self, item):
         """Handle clicks on cat names to navigate to the cat in the main view."""
@@ -6624,7 +6996,10 @@ class RoomOptimizerDetailPanel(QWidget):
     def _on_toggle_best_pairs(self):
         """Re-render pairs table based on toggle state."""
         checked = self._best_pairs_btn.isChecked()
-        self._best_pairs_btn.setText("Best Pairs" if checked else "All Pairs")
+        self._best_pairs_btn.setText(
+            _tr("room_optimizer.detail.best_pairs", default="Best Pairs")
+            if checked else _tr("room_optimizer.detail.all_pairs", default="All Pairs")
+        )
         if self._current_data:
             self.show_room(self._current_data)
 
@@ -6658,7 +7033,7 @@ class RoomOptimizerDetailPanel(QWidget):
 
     def show_room(self, data: Optional[dict]):
         if not data:
-            self._summary.setText("Select a room to see pair details.")
+            self._summary.setText(_tr("room_optimizer.detail.summary_idle", default="Select a room to see pair details."))
             self._summary.setToolTip("")
             self._pairs_table.setRowCount(0)
             self._pairs_table.show()
@@ -6679,8 +7054,15 @@ class RoomOptimizerDetailPanel(QWidget):
         if room == "Excluded":
             self._pairs_table.hide()
             self._excluded_table.show()
-            self._summary.setText(f"Excluded Cats  |  {len(excluded_cat_rows)} cats excluded from breeding calculations")
-            self._summary.setToolTip("Excluded cats are hidden from room optimizer breeding calculations.")
+            self._summary.setText(_tr(
+                "room_optimizer.detail.summary.excluded",
+                default="Excluded Cats  |  {count} cats excluded from breeding calculations",
+                count=len(excluded_cat_rows),
+            ))
+            self._summary.setToolTip(_tr(
+                "room_optimizer.detail.summary.excluded_tooltip",
+                default="Excluded cats are hidden from room optimizer breeding calculations.",
+            ))
             self._excluded_table.setRowCount(len(excluded_cat_rows))
             for row_idx, cat_row in enumerate(excluded_cat_rows):
                 name_item = QTableWidgetItem(cat_row["name"])
@@ -6714,9 +7096,19 @@ class RoomOptimizerDetailPanel(QWidget):
 
         cats_text = _compact_names(cats)
         self._summary.setText(
-            f"{room}  |  {total_pairs} pairs  |  Avg: {avg_stats:.1f}  |  Risk: {avg_risk:.0f}%"
+            _tr(
+                "room_optimizer.detail.summary.room",
+                default="{room}  |  {pair_count} pairs  |  Avg: {avg_stats:.1f}  |  Risk: {avg_risk:.0f}%",
+                room=room,
+                pair_count=total_pairs,
+                avg_stats=avg_stats,
+                avg_risk=avg_risk,
+            )
         )
-        self._summary.setToolTip("Cats: " + ", ".join(cats) if cats else "")
+        self._summary.setToolTip(
+            _tr("room_optimizer.detail.summary.cats", default="Cats: {names}", names=", ".join(cats))
+            if cats else ""
+        )
 
         # Preserve original rank before filtering
         for i, pair in enumerate(pairs, 1):
@@ -6739,18 +7131,18 @@ class RoomOptimizerDetailPanel(QWidget):
             font.setUnderline(True)
             cat_a_item.setFont(font)
             cat_b_item.setFont(font)
-            cat_a_item.setToolTip("Click to jump to this cat in Alive Cats view")
-            cat_b_item.setToolTip("Click to jump to this cat in Alive Cats view")
+            cat_a_item.setToolTip(_tr("common.tooltip.jump_to_alive", default="Click to jump to this cat in Alive Cats view"))
+            cat_b_item.setToolTip(_tr("common.tooltip.jump_to_alive", default="Click to jump to this cat in Alive Cats view"))
             sum_lo, sum_hi = pair.get("sum_range", (0, 0))
             sum_item = QTableWidgetItem(f"{sum_lo}-{sum_hi}")
-            sum_item.setToolTip(f"Possible offspring stat sum range: {sum_lo} to {sum_hi}")
+            sum_item.setToolTip(_tr("room_optimizer.detail.tooltip.sum_range", default="Possible offspring stat sum range: {lo} to {hi}", lo=sum_lo, hi=sum_hi))
             avg_item = QTableWidgetItem(f"{pair['avg_stats']:.1f}")
             stat_ranges = pair.get("stat_ranges", {})
             stat_items = []
             for stat in STAT_NAMES:
                 lo, hi = stat_ranges.get(stat, (0, 0))
                 item = QTableWidgetItem(f"{lo}-{hi}")
-                item.setToolTip(f"{stat.upper()} offspring range: {lo} to {hi}")
+                item.setToolTip(_tr("room_optimizer.detail.tooltip.stat_range", default="{stat} offspring range: {lo} to {hi}", stat=stat.upper(), lo=lo, hi=hi))
                 item.setBackground(QBrush(self._range_background(lo, hi)))
                 stat_items.append(item)
             risk_item = QTableWidgetItem(f"{pair['risk']:.0f}%")
@@ -6791,15 +7183,12 @@ class PerfectPlannerDetailPanel(QWidget):
         root.setContentsMargins(14, 10, 14, 10)
         root.setSpacing(8)
 
-        self._summary = QLabel("Select a stage to see the plan details.")
+        self._summary = QLabel()
         self._summary.setStyleSheet("color:#aaa; font-size:12px;")
         self._summary.setWordWrap(True)
         root.addWidget(self._summary)
 
         self._actions_table = QTableWidget(0, 6)
-        self._actions_table.setHorizontalHeaderLabels([
-            "Action", "Target", "Risk", "Why", "Children", "Rotate",
-        ])
         self._actions_table.verticalHeader().setVisible(False)
         self._actions_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._actions_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -6829,9 +7218,6 @@ class PerfectPlannerDetailPanel(QWidget):
         root.addWidget(self._actions_table, 1)
 
         self._excluded_table = QTableWidget(0, 12)
-        self._excluded_table.setHorizontalHeaderLabels([
-            "Cat", "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK", "Sum", "Agg", "Lib", "Inbred"
-        ])
         self._excluded_table.verticalHeader().setVisible(False)
         self._excluded_table.setSelectionMode(QAbstractItemView.NoSelection)
         self._excluded_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -6860,6 +7246,26 @@ class PerfectPlannerDetailPanel(QWidget):
             }
         """)
         root.addWidget(self._excluded_table, 1)
+        self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self._summary.setText(_tr("perfect_planner.detail.summary_idle", default="Select a stage to see the plan details."))
+        self._actions_table.setHorizontalHeaderLabels([
+            _tr("common.action", default="Action"),
+            _tr("common.target", default="Target"),
+            _tr("table.column.risk", default="Risk%"),
+            _tr("perfect_planner.detail.table.why", default="Why"),
+            _tr("common.children", default="Children"),
+            _tr("common.rotate", default="Rotate"),
+        ])
+        self._excluded_table.setHorizontalHeaderLabels([
+            _tr("safe_breeding.table.cat", default="Cat"),
+            "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK",
+            _tr("table.column.sum", default="Sum"),
+            _tr("table.column.aggression", default="Agg"),
+            _tr("table.column.libido", default="Lib"),
+            _tr("table.column.inbred", default="Inbred"),
+        ])
 
     @staticmethod
     def _build_target_grid(action: dict) -> QWidget:
@@ -6905,7 +7311,7 @@ class PerfectPlannerDetailPanel(QWidget):
             grid.addWidget(sum_lbl, row, len(STAT_NAMES) + 1)
 
         def _offspring_row(row: int, info: dict):
-            name = QLabel("Offspring")
+            name = QLabel(_tr("detail.label.offspring", default="Offspring"))
             name.setStyleSheet("color:#777; font-size:10px; font-style:italic;")
             grid.addWidget(name, row, 0)
             sum_lo, sum_hi = info.get("sum_range", (0, 0))
@@ -6921,7 +7327,7 @@ class PerfectPlannerDetailPanel(QWidget):
                     text = f"{lo}-{hi}\n{expected:.1f}"
                 lbl = QLabel(text)
                 lbl.setAlignment(Qt.AlignCenter)
-                lbl.setToolTip(f"{stat}: {lo}-{hi}, expected {expected:.1f}")
+                lbl.setToolTip(_tr("perfect_planner.detail.tooltip.stat_range", default="{stat}: {lo}-{hi}, expected {expected:.1f}", stat=stat, lo=lo, hi=hi, expected=expected))
                 lbl.setStyleSheet(
                     f"background:rgba({hi_color.red()},{hi_color.green()},{hi_color.blue()},110);"
                     f"color:rgb({hi_color.red()},{hi_color.green()},{hi_color.blue()});"
@@ -6946,7 +7352,7 @@ class PerfectPlannerDetailPanel(QWidget):
 
     def show_stage(self, data: Optional[dict]):
         if not data:
-            self._summary.setText("Select a stage to see the plan details.")
+            self._summary.setText(_tr("perfect_planner.detail.summary_idle", default="Select a stage to see the plan details."))
             self._summary.setToolTip("")
             self._actions_table.setRowCount(0)
             self._actions_table.show()
@@ -6955,8 +7361,15 @@ class PerfectPlannerDetailPanel(QWidget):
 
         if data.get("stage") == "Excluded":
             rows = data.get("excluded_cat_rows", [])
-            self._summary.setText(f"Excluded Cats  |  {len(rows)} cats excluded from planner calculations")
-            self._summary.setToolTip("Excluded cats are hidden from the Perfect 7 Planner calculations.")
+            self._summary.setText(_tr(
+                "perfect_planner.detail.summary.excluded",
+                default="Excluded Cats  |  {count} cats excluded from planner calculations",
+                count=len(rows),
+            ))
+            self._summary.setToolTip(_tr(
+                "perfect_planner.detail.summary.excluded_tooltip",
+                default="Excluded cats are hidden from the Perfect 7 Planner calculations.",
+            ))
             self._actions_table.hide()
             self._excluded_table.show()
             self._excluded_table.setRowCount(len(rows))
@@ -7025,15 +7438,14 @@ class PerfectCatPlannerView(QWidget):
     """Stage-based planner for building perfect 7-base-stat lines."""
 
     @staticmethod
-    def _set_toggle_button_label(btn: QPushButton, label: str):
-        state = "On" if btn.isChecked() else "Off"
-        btn.setText(f"{label}: {state}")
+    def _set_toggle_button_label(btn: QPushButton, label_key: str, default_label: str):
+        _set_localized_toggle_button_label(btn, label_key, default_label)
 
     @staticmethod
-    def _bind_persistent_toggle(btn: QPushButton, label: str, key: str):
-        PerfectCatPlannerView._set_toggle_button_label(btn, label)
+    def _bind_persistent_toggle(btn: QPushButton, label_key: str, key: str, default_label: str):
+        PerfectCatPlannerView._set_toggle_button_label(btn, label_key, default_label)
         btn.toggled.connect(lambda checked: _set_optimizer_flag(key, checked))
-        btn.toggled.connect(lambda _: PerfectCatPlannerView._set_toggle_button_label(btn, label))
+        btn.toggled.connect(lambda _: PerfectCatPlannerView._set_toggle_button_label(btn, label_key, default_label))
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -7057,7 +7469,7 @@ class PerfectCatPlannerView(QWidget):
         root.setSpacing(12)
 
         header = QHBoxLayout()
-        self._title = QLabel("Perfect 7 Planner")
+        self._title = QLabel()
         self._title.setStyleSheet("color:#ddd; font-size:18px; font-weight:bold;")
         self._summary = QLabel("")
         self._summary.setStyleSheet("color:#666; font-size:11px;")
@@ -7066,10 +7478,8 @@ class PerfectCatPlannerView(QWidget):
         header.addWidget(self._summary)
         root.addLayout(header)
 
-        desc = QLabel(
-            "Build a staged plan for pushing toward full 7-base-stat lines without family breeding. "
-            "Use Max inbreeding risk = 0 to force fully clean plans."
-        )
+        desc = QLabel()
+        self._desc = desc
         desc.setWordWrap(True)
         desc.setStyleSheet("color:#8d8da8; font-size:11px;")
         root.addWidget(desc)
@@ -7085,7 +7495,7 @@ class PerfectCatPlannerView(QWidget):
         controls.setSpacing(8)
         controls.setContentsMargins(0, 0, 0, 0)
 
-        self._min_stats_label = QLabel("Min base stats:")
+        self._min_stats_label = QLabel()
         self._min_stats_label.setStyleSheet("color:#888; font-size:11px;")
         controls.addWidget(self._min_stats_label)
 
@@ -7100,7 +7510,7 @@ class PerfectCatPlannerView(QWidget):
 
         controls.addSpacing(12)
 
-        self._max_risk_label = QLabel("Max inbreeding risk %:")
+        self._max_risk_label = QLabel()
         self._max_risk_label.setStyleSheet("color:#888; font-size:11px;")
         controls.addWidget(self._max_risk_label)
 
@@ -7115,35 +7525,29 @@ class PerfectCatPlannerView(QWidget):
 
         controls.addSpacing(12)
 
-        starter_label = QLabel("Start pairs:")
-        starter_label.setStyleSheet("color:#888; font-size:11px;")
-        controls.addWidget(starter_label)
+        self._starter_label = QLabel()
+        self._starter_label.setStyleSheet("color:#888; font-size:11px;")
+        controls.addWidget(self._starter_label)
         self._starter_pairs_input = QSpinBox()
         self._starter_pairs_input.setRange(1, 12)
         self._starter_pairs_input.setValue(4)
         self._starter_pairs_input.setFixedWidth(60)
-        self._starter_pairs_input.setToolTip(
-            "How many unrelated foundation pairs the planner should recommend to start the line."
-        )
         controls.addWidget(self._starter_pairs_input)
 
         controls.addSpacing(12)
 
-        stimulation_label = QLabel("Stimulation:")
-        stimulation_label.setStyleSheet("color:#888; font-size:11px;")
-        controls.addWidget(stimulation_label)
+        self._stimulation_label = QLabel()
+        self._stimulation_label.setStyleSheet("color:#888; font-size:11px;")
+        controls.addWidget(self._stimulation_label)
         self._stimulation_input = QSpinBox()
         self._stimulation_input.setRange(0, 200)
         self._stimulation_input.setValue(50)
         self._stimulation_input.setFixedWidth(70)
-        self._stimulation_input.setToolTip(
-            "Used for projected offspring weighting. Higher stimulation favors the stronger parent stat."
-        )
         controls.addWidget(self._stimulation_input)
 
         controls.addSpacing(12)
 
-        self._plan_btn = QPushButton("Build Perfect 7 Plan")
+        self._plan_btn = QPushButton()
         self._plan_btn.setStyleSheet(
             "QPushButton { background:#1f5f4a; color:#f2f7f3; border:1px solid #3f8f72; "
             "border-radius:4px; padding:6px 14px; font-size:11px; font-weight:bold; }"
@@ -7164,7 +7568,7 @@ class PerfectCatPlannerView(QWidget):
             "QPushButton:checked { background:#5a3a2a; color:#ddd; border:1px solid #8a5a4a; }"
             "QPushButton:hover { background:#252545; color:#ddd; }"
         )
-        self._bind_persistent_toggle(self._avoid_lovers_checkbox, "Avoid Lovers", "perfect_planner_avoid_lovers")
+        self._bind_persistent_toggle(self._avoid_lovers_checkbox, "perfect_planner.toggle.avoid_lovers", "perfect_planner_avoid_lovers", "Avoid Lovers")
         controls.addWidget(self._avoid_lovers_checkbox)
 
         self._prefer_low_aggression_checkbox = QPushButton()
@@ -7178,8 +7582,9 @@ class PerfectCatPlannerView(QWidget):
         )
         self._bind_persistent_toggle(
             self._prefer_low_aggression_checkbox,
-            "Prefer Low Aggression",
+            "perfect_planner.toggle.prefer_low_aggression",
             "prefer_low_aggression",
+            "Prefer Low Aggression",
         )
         controls.addWidget(self._prefer_low_aggression_checkbox)
 
@@ -7194,8 +7599,9 @@ class PerfectCatPlannerView(QWidget):
         )
         self._bind_persistent_toggle(
             self._prefer_high_libido_checkbox,
-            "Prefer High Libido",
+            "perfect_planner.toggle.prefer_high_libido",
             "prefer_high_libido",
+            "Prefer High Libido",
         )
         controls.addWidget(self._prefer_high_libido_checkbox)
 
@@ -7207,9 +7613,6 @@ class PerfectCatPlannerView(QWidget):
         self._splitter.setStyleSheet("QSplitter::handle:vertical { background:#1e1e38; }")
 
         self._table = QTableWidget(0, 6)
-        self._table.setHorizontalHeaderLabels([
-            "Stage", "Goal", "Pairs", "7+ Coverage", "Risk%", "Details",
-        ])
         self._table.verticalHeader().setVisible(False)
         self._table.setSelectionMode(QAbstractItemView.SingleSelection)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -7238,16 +7641,49 @@ class PerfectCatPlannerView(QWidget):
         )
 
         self._details_pane = PerfectPlannerDetailPanel()
-        self._bottom_tabs.addTab(self._details_pane, "Stage Details")
+        self._bottom_tabs.addTab(self._details_pane, "")
 
         self._cat_locator = RoomOptimizerCatLocator()
-        self._bottom_tabs.addTab(self._cat_locator, "Cat Locator")
+        self._bottom_tabs.addTab(self._cat_locator, "")
 
         self._splitter.addWidget(self._bottom_tabs)
         self._splitter.setSizes([180, 420])
         root.addWidget(self._splitter, 1)
 
+        self.retranslate_ui()
         _enforce_min_font_in_widget_tree(self)
+
+    def retranslate_ui(self):
+        self._title.setText(_tr("perfect_planner.title", default="Perfect 7 Planner"))
+        self._desc.setText(_tr(
+            "perfect_planner.description",
+            default="Build a staged plan for pushing toward full 7-base-stat lines without family breeding. Use Max inbreeding risk = 0 to force fully clean plans.",
+        ))
+        self._min_stats_label.setText(_tr("room_optimizer.min_base_stats", default="Min base stats:"))
+        self._max_risk_label.setText(_tr("room_optimizer.max_inbreeding_risk", default="Max inbreeding risk %:"))
+        self._starter_label.setText(_tr("perfect_planner.start_pairs", default="Start pairs:"))
+        self._starter_pairs_input.setToolTip(_tr(
+            "perfect_planner.start_pairs.tooltip",
+            default="How many unrelated foundation pairs the planner should recommend to start the line.",
+        ))
+        self._stimulation_label.setText(_tr("detail.label.stimulation", default="Stimulation:"))
+        self._stimulation_input.setToolTip(_tr(
+            "perfect_planner.stimulation.tooltip",
+            default="Used for projected offspring weighting. Higher stimulation favors the stronger parent stat.",
+        ))
+        self._plan_btn.setText(_tr("perfect_planner.build_plan", default="Build Perfect 7 Plan"))
+        self._table.setHorizontalHeaderLabels([
+            _tr("common.stage", default="Stage"),
+            _tr("common.goal", default="Goal"),
+            _tr("room_optimizer.table.expected_pairs", default="Pairs"),
+            _tr("common.coverage", default="7+ Coverage"),
+            _tr("table.column.risk", default="Risk%"),
+            _tr("common.details", default="Details"),
+        ])
+        self._bottom_tabs.setTabText(self._bottom_tabs.indexOf(self._details_pane), _tr("perfect_planner.tab.stage_details", default="Stage Details"))
+        self._bottom_tabs.setTabText(self._bottom_tabs.indexOf(self._cat_locator), _tr("room_optimizer.tab.cat_locator", default="Cat Locator"))
+        self._details_pane.retranslate_ui()
+        self._cat_locator.retranslate_ui()
 
     def _on_table_selection_changed(self):
         selected_ranges = self._table.selectedRanges()
@@ -7267,9 +7703,18 @@ class PerfectCatPlannerView(QWidget):
         alive_count = len([c for c in cats if c.status != "Gone"])
         excluded_count = len([c for c in cats if c.status != "Gone" and c.db_key in self._excluded_keys])
         if excluded_count > 0:
-            self._summary.setText(f"{alive_count} alive cats available ({excluded_count} excluded from breeding)")
+            self._summary.setText(_tr(
+                "room_optimizer.summary.available_excluded",
+                default="{alive_count} alive cats available ({excluded_count} excluded from breeding)",
+                alive_count=alive_count,
+                excluded_count=excluded_count,
+            ))
         else:
-            self._summary.setText(f"{alive_count} alive cats available")
+            self._summary.setText(_tr(
+                "room_optimizer.summary.available",
+                default="{alive_count} alive cats available",
+                alive_count=alive_count,
+            ))
 
     def set_cache(self, cache: Optional['BreedingCache']):
         self._cache = cache
@@ -7306,7 +7751,7 @@ class PerfectCatPlannerView(QWidget):
             self._table.setRowCount(0)
             self._details_pane.show_stage(None)
             self._cat_locator.clear()
-            self._summary.setText("Not enough cats to build a plan")
+            self._summary.setText(_tr("perfect_planner.summary.not_enough_cats", default="Not enough cats to build a plan"))
             return
 
         stat_sum = {cat.db_key: sum(cat.base_stats.values()) for cat in alive_cats}
@@ -7499,14 +7944,23 @@ class PerfectCatPlannerView(QWidget):
             self._table.setRowCount(0)
             self._details_pane.show_stage(None)
             self._cat_locator.clear()
-            self._summary.setText("No low-risk unrelated breeding pairs found under the current filters")
+            self._summary.setText(_tr(
+                "perfect_planner.summary.no_pairs",
+                default="No low-risk unrelated breeding pairs found under the current filters",
+            ))
             return
 
         def _fmt_stats(stats: list[str]) -> str:
-            return ", ".join(stats) if stats else "none"
+            return ", ".join(stats) if stats else _tr("perfect_planner.none", default="none")
 
         def _pair_name(pair: dict) -> str:
             return f"{pair['cat_a'].name} ({pair['cat_a'].gender_display}) x {pair['cat_b'].name} ({pair['cat_b'].gender_display})"
+
+        def _pair_stage_label(idx: int) -> str:
+            return _tr("perfect_planner.stage.pair", default="Pair {index}", index=idx)
+
+        def _rotation_stage_label(idx: int) -> str:
+            return _tr("perfect_planner.stage.rotation", default="Rotation {index}", index=idx)
 
         def _stage1_target_grid(pair: dict) -> dict:
             projection = pair["projection"]
@@ -7604,39 +8058,64 @@ class PerfectCatPlannerView(QWidget):
             projection = pair["projection"]
             bp = _pair_breakpoint_analysis(pair["cat_a"], pair["cat_b"], stimulation)
             stage1_actions.append({
-                "action": f"Pair {idx}",
+                "action": _pair_stage_label(idx),
                 "target": _pair_name(pair),
                 "target_grid": _stage1_target_grid(pair),
                 "risk": pair["risk"],
                 "why": (
-                    f"Fast foundation pair for a perfect-7 line. "
-                    f"Projected 7+ coverage: {projection['seven_plus_total']:.1f}/7 at stimulation {int(stimulation)}. "
-                    f"Breakpoint: {bp['headline']}. "
+                    _tr(
+                        "perfect_planner.stage1.action.why_intro",
+                        default="Fast foundation pair for a perfect-7 line. Projected 7+ coverage: {coverage:.1f}/7 at stimulation {stim}. Breakpoint: {headline}. ",
+                        coverage=projection["seven_plus_total"],
+                        stim=int(stimulation),
+                        headline=bp["headline"],
+                    )
                     + " ".join(bp["hints"][:2])
                 ),
                 "children": (
-                    "Keep the strongest son and daughter if possible. "
-                    "Do not reuse siblings together."
+                    _tr(
+                        "perfect_planner.stage1.action.children",
+                        default="Keep the strongest son and daughter if possible. Do not reuse siblings together.",
+                    )
                 ),
                 "rotate": (
-                    "Stay on this pair until the line stops improving, then use the Stage 3 outcross."
+                    _tr(
+                        "perfect_planner.stage1.action.rotate",
+                        default="Stay on this pair until the line stops improving, then use the Stage 3 outcross.",
+                    )
                 ),
             })
 
         stage_rows.append({
-            "stage": "Stage 1",
-            "goal": f"Start with {len(selected_pairs)} foundation pairs",
+            "stage": _tr("perfect_planner.stage1.title", default="Stage 1"),
+            "goal": _tr(
+                "perfect_planner.stage1.goal",
+                default="Start with {count} foundation pairs",
+                count=len(selected_pairs),
+            ),
             "pairs": len(selected_pairs),
             "coverage": sum(pair["projection"]["seven_plus_total"] for pair in selected_pairs) / len(selected_pairs),
             "risk": max(pair["risk"] for pair in selected_pairs),
-            "details": "Best unrelated pairs to start pushing 7s immediately",
+            "details": _tr(
+                "perfect_planner.stage1.details",
+                default="Best unrelated pairs to start pushing 7s immediately",
+            ),
             "summary": (
-                f"Start with {len(selected_pairs)} unrelated foundation pairs. "
-                "These are the fastest low-risk lines for reaching full 7-base-stat coverage."
+                _tr(
+                    "perfect_planner.stage1.summary",
+                    default="Start with {count} unrelated foundation pairs. These are the fastest low-risk lines for reaching full 7-base-stat coverage.",
+                    count=len(selected_pairs),
+                )
             ),
             "notes": [
-                "Foundation pairs are disjoint so you can work multiple lines at once.",
-                "Max inbreeding risk is enforced before a pair can appear here.",
+                _tr(
+                    "perfect_planner.stage1.note.disjoint",
+                    default="Foundation pairs are disjoint so you can work multiple lines at once.",
+                ),
+                _tr(
+                    "perfect_planner.stage1.note.risk_cap",
+                    default="Max inbreeding risk is enforced before a pair can appear here.",
+                ),
             ],
             "actions": stage1_actions,
         })
@@ -7645,36 +8124,65 @@ class PerfectCatPlannerView(QWidget):
         for idx, pair in enumerate(selected_pairs, 1):
             projection = pair["projection"]
             stage2_actions.append({
-                "action": f"Separate Pair {idx} offspring",
-                "target": f"Protect locked stats: {_fmt_stats(projection['locked_stats'])}",
+                "action": _tr(
+                    "perfect_planner.stage2.action.title",
+                    default="Separate Pair {index} offspring",
+                    index=idx,
+                ),
+                "target": _tr(
+                    "perfect_planner.stage2.action.target",
+                    default="Protect locked stats: {stats}",
+                    stats=_fmt_stats(projection["locked_stats"]),
+                ),
                 "risk": None,
                 "why": (
-                    "Keeping sons and daughters apart preserves multiple clean branches "
-                    "instead of collapsing into sibling breeding."
+                    _tr(
+                        "perfect_planner.stage2.action.why",
+                        default="Keeping sons and daughters apart preserves multiple clean branches instead of collapsing into sibling breeding.",
+                    )
                 ),
                 "children": (
-                    f"Move Pair {idx} sons and daughters into different rooms from each other and from "
-                    f"{pair['cat_a'].name} / {pair['cat_b'].name} once they mature."
+                    _tr(
+                        "perfect_planner.stage2.action.children",
+                        default="Move Pair {index} sons and daughters into different rooms from each other and from {parent_a} / {parent_b} once they mature.",
+                        index=idx,
+                        parent_a=pair["cat_a"].name,
+                        parent_b=pair["cat_b"].name,
+                    )
                 ),
                 "rotate": (
-                    "Choose one keeper line per sex, then hold the backups aside for future outcrosses."
+                    _tr(
+                        "perfect_planner.stage2.action.rotate",
+                        default="Choose one keeper line per sex, then hold the backups aside for future outcrosses.",
+                    )
                 ),
             })
 
         stage_rows.append({
-            "stage": "Stage 2",
-            "goal": "Separate children into future lines",
+            "stage": _tr("perfect_planner.stage2.title", default="Stage 2"),
+            "goal": _tr("perfect_planner.stage2.goal", default="Separate children into future lines"),
             "pairs": len(stage2_actions),
             "coverage": sum(len(pair["projection"]["locked_stats"]) for pair in selected_pairs) / len(selected_pairs),
             "risk": 0.0,
-            "details": "Room guidance to avoid collapsing the plan into sibling loops",
+            "details": _tr(
+                "perfect_planner.stage2.details",
+                default="Room guidance to avoid collapsing the plan into sibling loops",
+            ),
             "summary": (
-                "Separate offspring by line and sex. The planner assumes you will keep clean branches "
-                "available for the next generation instead of breeding within one family."
+                _tr(
+                    "perfect_planner.stage2.summary",
+                    default="Separate offspring by line and sex. The planner assumes you will keep clean branches available for the next generation instead of breeding within one family.",
+                )
             ),
             "notes": [
-                "This stage is the child-separation guidance from issue #19.",
-                "If you only keep one kitten, keep the one that raises the lowest missing stat.",
+                _tr(
+                    "perfect_planner.stage2.note.guidance",
+                    default="This stage is the child-separation guidance from issue #19.",
+                ),
+                _tr(
+                    "perfect_planner.stage2.note.keep_one",
+                    default="If you only keep one kitten, keep the one that raises the lowest missing stat.",
+                ),
             ],
             "actions": stage2_actions,
         })
@@ -7687,26 +8195,54 @@ class PerfectCatPlannerView(QWidget):
             if rotation is None:
                 stage3_import_counts.append(0.0)
                 stage3_actions.append({
-                    "action": f"Rotate Pair {idx} later",
-                    "target": f"Still missing: {_fmt_stats(missing)}",
+                    "action": _tr(
+                        "perfect_planner.stage3.action.defer_title",
+                        default="Rotate Pair {index} later",
+                        index=idx,
+                    ),
+                    "target": _tr(
+                        "perfect_planner.stage3.action.defer_target",
+                        default="Still missing: {stats}",
+                        stats=_fmt_stats(missing),
+                    ),
                     "risk": None,
                     "why": (
-                        "No clean outcross in the current roster covers the missing stats under the active risk cap."
+                        _tr(
+                            "perfect_planner.stage3.action.defer_why",
+                            default="No clean outcross in the current roster covers the missing stats under the active risk cap.",
+                        )
                     ),
                     "children": (
-                        "Keep the best backup kitten alive and wait for an unrelated stray or future outcross."
+                        _tr(
+                            "perfect_planner.stage3.action.defer_children",
+                            default="Keep the best backup kitten alive and wait for an unrelated stray or future outcross.",
+                        )
                     ),
                     "rotate": (
-                        f"Bring in a stray/unrelated breeder with 7s in {_fmt_stats(missing)}."
+                        _tr(
+                            "perfect_planner.stage3.action.defer_rotate",
+                            default="Bring in a stray/unrelated breeder with 7s in {stats}.",
+                            stats=_fmt_stats(missing),
+                        )
                     ),
                 })
             else:
-                source_note = "founder line" if not get_parents(rotation["candidate"]) else "existing line"
+                source_note = _tr(
+                    "perfect_planner.stage3.source.founder",
+                    default="founder line",
+                ) if not get_parents(rotation["candidate"]) else _tr(
+                    "perfect_planner.stage3.source.existing",
+                    default="existing line",
+                )
                 rotated_projection = _offspring_projection(rotation["parent"], rotation["candidate"])
                 rotated_bp = _pair_breakpoint_analysis(rotation["parent"], rotation["candidate"], stimulation)
                 stage3_import_counts.append(float(len(rotation["bring_stats"])))
                 stage3_actions.append({
-                    "action": f"Pair {idx} Rotation",
+                    "action": _tr(
+                        "perfect_planner.stage3.action.rotation_title",
+                        default="Pair {index} Rotation",
+                        index=idx,
+                    ),
                     "target": (
                         f"{rotation['parent'].name} ({rotation['parent'].gender_display}) x "
                         f"{rotation['candidate'].name} ({rotation['candidate'].gender_display})"
@@ -7718,36 +8254,59 @@ class PerfectCatPlannerView(QWidget):
                     ),
                     "risk": rotation["risk"],
                     "why": (
-                        f"Use this {source_note} outcross when Pair {idx} stalls on {_fmt_stats(missing)}. "
-                        f"It covers missing 7-stats without falling back to family breeding. "
-                        f"Projected 7+ coverage: {rotated_projection['seven_plus_total']:.1f}/7 at stimulation {int(stimulation)}. "
-                        f"Breakpoint: {rotated_bp['headline']}. "
+                        _tr(
+                            "perfect_planner.stage3.action.rotation_why",
+                            default="Use this {source} outcross when Pair {index} stalls on {stats}. It covers missing 7-stats without falling back to family breeding. Projected 7+ coverage: {coverage:.1f}/7 at stimulation {stim}. Breakpoint: {headline}. ",
+                            source=source_note,
+                            index=idx,
+                            stats=_fmt_stats(missing),
+                            coverage=rotated_projection["seven_plus_total"],
+                            stim=int(stimulation),
+                            headline=rotated_bp["headline"],
+                        )
                         + " ".join(rotated_bp["hints"][:2])
                     ),
                     "children": (
-                        "Promote the kitten that keeps the old locked stats while adding the missing stat coverage."
+                        _tr(
+                            "perfect_planner.stage3.action.rotation_children",
+                            default="Promote the kitten that keeps the old locked stats while adding the missing stat coverage.",
+                        )
                     ),
                     "rotate": (
-                        "Swap once the current line stops improving or when siblings would be your next obvious match."
+                        _tr(
+                            "perfect_planner.stage3.action.rotation_rotate",
+                            default="Swap once the current line stops improving or when siblings would be your next obvious match.",
+                        )
                     ),
                 })
 
         stage_rows.append({
-            "stage": "Stage 3",
-            "goal": "Rotate partners before the line stalls",
+            "stage": _tr("perfect_planner.stage3.title", default="Stage 3"),
+            "goal": _tr("perfect_planner.stage3.goal", default="Rotate partners before the line stalls"),
             "pairs": len(stage3_actions),
             "coverage": sum(stage3_import_counts) / max(1, len(stage3_import_counts)),
             "risk": max(
                 [float(action["risk"]) for action in stage3_actions if action["risk"] is not None] or [0.0]
             ),
-            "details": "When and why to outcross instead of breeding inward",
+            "details": _tr(
+                "perfect_planner.stage3.details",
+                default="When and why to outcross instead of breeding inward",
+            ),
             "summary": (
-                "Rotate into unrelated or lower-risk partners when a line is missing specific 7s. "
-                "This is the long-term maintenance step from issue #26."
+                _tr(
+                    "perfect_planner.stage3.summary",
+                    default="Rotate into unrelated or lower-risk partners when a line is missing specific 7s. This is the long-term maintenance step from issue #26.",
+                )
             ),
             "notes": [
-                "Rotation advice is based on the missing 7-stat coverage from each foundation pair.",
-                "If no candidate appears, the roster is telling you to wait for a cleaner founder.",
+                _tr(
+                    "perfect_planner.stage3.note.coverage",
+                    default="Rotation advice is based on the missing 7-stat coverage from each foundation pair.",
+                ),
+                _tr(
+                    "perfect_planner.stage3.note.wait_founder",
+                    default="If no candidate appears, the roster is telling you to wait for a cleaner founder.",
+                ),
             ],
             "actions": stage3_actions,
         })
@@ -7757,50 +8316,93 @@ class PerfectCatPlannerView(QWidget):
             missing = pair["projection"]["missing_stats"]
             if missing:
                 stage4_actions.append({
-                    "action": f"Finish Pair {idx} through a keeper outcross",
-                    "target": f"Finish: {_fmt_stats(missing)}",
+                    "action": _tr(
+                        "perfect_planner.stage4.action.finish_title",
+                        default="Finish Pair {index} through a keeper outcross",
+                        index=idx,
+                    ),
+                    "target": _tr(
+                        "perfect_planner.stage4.action.finish_target",
+                        default="Finish: {stats}",
+                        stats=_fmt_stats(missing),
+                    ),
                     "risk": pair["risk"],
                     "why": (
-                        "Once a keeper from this line is close to all 7s, use the Stage 3 rotation target rather "
-                        "than breeding back into siblings or parents."
+                        _tr(
+                            "perfect_planner.stage4.action.finish_why",
+                            default="Once a keeper from this line is close to all 7s, use the Stage 3 rotation target rather than breeding back into siblings or parents.",
+                        )
                     ),
                     "children": (
-                        "Keep one opposite-sex backup in a different room so the finished line survives bad rolls."
+                        _tr(
+                            "perfect_planner.stage4.action.finish_children",
+                            default="Keep one opposite-sex backup in a different room so the finished line survives bad rolls.",
+                        )
                     ),
                     "rotate": (
-                        "Retire the weaker branch once the new keeper strictly improves the missing stats."
+                        _tr(
+                            "perfect_planner.stage4.action.finish_rotate",
+                            default="Retire the weaker branch once the new keeper strictly improves the missing stats.",
+                        )
                     ),
                 })
             else:
                 stage4_actions.append({
-                    "action": f"Maintain Pair {idx} as a clean 7-line",
-                    "target": "All seven stats already covered",
+                    "action": _tr(
+                        "perfect_planner.stage4.action.maintain_title",
+                        default="Maintain Pair {index} as a clean 7-line",
+                        index=idx,
+                    ),
+                    "target": _tr(
+                        "perfect_planner.stage4.action.maintain_target",
+                        default="All seven stats already covered",
+                    ),
                     "risk": pair["risk"],
                     "why": (
-                        "This line already covers every target stat. The goal shifts from climbing to preserving."
+                        _tr(
+                            "perfect_planner.stage4.action.maintain_why",
+                            default="This line already covers every target stat. The goal shifts from climbing to preserving.",
+                        )
                     ),
                     "children": (
-                        "Keep a primary breeder and a backup of the opposite sex in separate rooms."
+                        _tr(
+                            "perfect_planner.stage4.action.maintain_children",
+                            default="Keep a primary breeder and a backup of the opposite sex in separate rooms.",
+                        )
                     ),
                     "rotate": (
-                        "Only bring in an unrelated stray if you need redundancy or the risk cap tightens."
+                        _tr(
+                            "perfect_planner.stage4.action.maintain_rotate",
+                            default="Only bring in an unrelated stray if you need redundancy or the risk cap tightens.",
+                        )
                     ),
                 })
 
         stage_rows.append({
-            "stage": "Stage 4",
-            "goal": "Maintain and finish the strongest lines",
+            "stage": _tr("perfect_planner.stage4.title", default="Stage 4"),
+            "goal": _tr("perfect_planner.stage4.goal", default="Maintain and finish the strongest lines"),
             "pairs": len(stage4_actions),
             "coverage": sum(len(pair["projection"]["reachable_stats"]) for pair in selected_pairs) / len(selected_pairs),
             "risk": max(pair["risk"] for pair in selected_pairs),
-            "details": "How to convert the strongest keeper lines into durable perfect cats",
+            "details": _tr(
+                "perfect_planner.stage4.details",
+                default="How to convert the strongest keeper lines into durable perfect cats",
+            ),
             "summary": (
-                "Use the strongest keepers to finish the line, then preserve it with unrelated backups instead "
-                "of letting the plan collapse into inbred maintenance."
+                _tr(
+                    "perfect_planner.stage4.summary",
+                    default="Use the strongest keepers to finish the line, then preserve it with unrelated backups instead of letting the plan collapse into inbred maintenance.",
+                )
             ),
             "notes": [
-                "The planner is optimizing toward perfect 7-base-stat coverage, not short-term room fill.",
-                "Set Max inbreeding risk to 0 for the cleanest possible plan.",
+                _tr(
+                    "perfect_planner.stage4.note.goal",
+                    default="The planner is optimizing toward perfect 7-base-stat coverage, not short-term room fill.",
+                ),
+                _tr(
+                    "perfect_planner.stage4.note.risk_zero",
+                    default="Set Max inbreeding risk to 0 for the cleanest possible plan.",
+                ),
             ],
             "actions": stage4_actions,
         })
@@ -7850,31 +8452,31 @@ class PerfectCatPlannerView(QWidget):
         if excluded_cats:
             row_idx = self._table.rowCount()
             self._table.insertRow(row_idx)
-            stage_item = QTableWidgetItem("Excluded")
+            stage_item = QTableWidgetItem(_tr("room_optimizer.row.excluded", default="Excluded"))
             stage_item.setTextAlignment(Qt.AlignCenter)
             stage_item.setForeground(QBrush(QColor(170, 120, 120)))
             stage_item.setData(Qt.UserRole, {
-                "stage": "Excluded",
+                "stage": _tr("room_optimizer.row.excluded", default="Excluded"),
                 "excluded_cat_rows": [
                     {
                         "name": f"{cat.name} ({cat.gender_display})",
                         "stats": dict(cat.base_stats),
                         "sum": _cat_base_sum(cat),
                         "traits": {
-                            "aggression": _trait_label_from_value("aggression", cat.aggression) or "unknown",
-                            "libido": _trait_label_from_value("libido", cat.libido) or "unknown",
-                            "inbredness": _trait_label_from_value("inbredness", cat.inbredness) or "unknown",
+                            "aggression": _trait_display_label("aggression", cat.aggression) or _tr("common.unknown", default="unknown"),
+                            "libido": _trait_display_label("libido", cat.libido) or _tr("common.unknown", default="unknown"),
+                            "inbredness": _trait_display_label("inbredness", cat.inbredness) or _tr("common.unknown", default="unknown"),
                         },
                     }
                     for cat in excluded_cats
                 ],
             })
-            details_item = QTableWidgetItem("Excluded from Perfect 7 Planner calculations")
+            details_item = QTableWidgetItem(_tr("perfect_planner.summary.excluded_details", default="Excluded from Perfect 7 Planner calculations"))
             dash_pair = QTableWidgetItem("—"); dash_pair.setTextAlignment(Qt.AlignCenter)
             dash_cov = QTableWidgetItem("—"); dash_cov.setTextAlignment(Qt.AlignCenter)
             dash_risk = QTableWidgetItem("—"); dash_risk.setTextAlignment(Qt.AlignCenter)
             self._table.setItem(row_idx, 0, stage_item)
-            self._table.setItem(row_idx, 1, QTableWidgetItem(f"{len(excluded_cats)} excluded cats"))
+            self._table.setItem(row_idx, 1, QTableWidgetItem(_tr("room_optimizer.row.excluded_cats", default="{count} excluded cats", count=len(excluded_cats))))
             self._table.setItem(row_idx, 2, dash_pair)
             self._table.setItem(row_idx, 3, dash_cov)
             self._table.setItem(row_idx, 4, dash_risk)
@@ -7884,10 +8486,10 @@ class PerfectCatPlannerView(QWidget):
         locator_cats: dict[int, dict] = {}  # keyed by db_key to deduplicate
         room_order_counter = 0
         for idx, pair in enumerate(selected_pairs):
-            pair_label = f"Pair {idx + 1}"
+            pair_label = _pair_stage_label(idx + 1)
             for cat in (pair["cat_a"], pair["cat_b"]):
                 if cat.db_key not in locator_cats:
-                    current = cat.room_display or cat.status or "?"
+                    current = cat.room_display or STATUS_ABBREV.get(cat.status, cat.status) or _tr("common.unknown", default="?")
                     locator_cats[cat.db_key] = {
                         "name": cat.name,
                         "gender_display": cat.gender_display,
@@ -7905,14 +8507,14 @@ class PerfectCatPlannerView(QWidget):
             if rotation is not None:
                 cat = rotation["candidate"]
                 if cat.db_key not in locator_cats:
-                    current = cat.room_display or cat.status or "?"
+                    current = cat.room_display or STATUS_ABBREV.get(cat.status, cat.status) or _tr("common.unknown", default="?")
                     locator_cats[cat.db_key] = {
                         "name": cat.name,
                         "gender_display": cat.gender_display,
                         "db_key": cat.db_key,
                         "age": cat.age if cat.age is not None else cat.db_key,
                         "current_room": current,
-                        "assigned_room": f"Rotation {idx + 1}",
+                        "assigned_room": _rotation_stage_label(idx + 1),
                         "room_order": room_order_counter,
                         "needs_move": False,
                     }
@@ -7921,12 +8523,22 @@ class PerfectCatPlannerView(QWidget):
 
         if excluded_cats:
             self._summary.setText(
-                f"Planned {len(selected_pairs)} starting pairs from {len(alive_cats)} eligible cats "
-                f"({len(excluded_cats)} excluded)"
+                _tr(
+                    "perfect_planner.summary.planned_excluded",
+                    default="Planned {pair_count} starting pairs from {cat_count} eligible cats ({excluded_count} excluded)",
+                    pair_count=len(selected_pairs),
+                    cat_count=len(alive_cats),
+                    excluded_count=len(excluded_cats),
+                )
             )
         else:
             self._summary.setText(
-                f"Planned {len(selected_pairs)} starting pairs from {len(alive_cats)} eligible cats"
+                _tr(
+                    "perfect_planner.summary.planned",
+                    default="Planned {pair_count} starting pairs from {cat_count} eligible cats",
+                    pair_count=len(selected_pairs),
+                    cat_count=len(alive_cats),
+                )
             )
 
         if stage_rows:
@@ -8126,6 +8738,25 @@ class CalibrationView(QWidget):
         self._export_btn.setText(_tr("calibration.export"))
         self._import_btn.setText(_tr("calibration.import"))
         self._bulk_label.setText(_tr("calibration.bulk_edit_selected"))
+        self._table.setHorizontalHeaderLabels([
+            _tr("table.column.name", default="Name"),
+            _tr("table.column.status", default="Status"),
+            _tr("calibration.column.gender_token", default="Gender\nToken"),
+            _tr("calibration.column.pre_gender_u32s", default="Pre-G\nU32s"),
+            _tr("calibration.column.parsed_gender", default="Parsed\nG"),
+            _tr("calibration.column.override_gender", default="Override\nG"),
+            _tr("calibration.column.default_sexuality", default="Default\nSexuality"),
+            _tr("table.column.sexuality", default="Sexuality"),
+            _tr("calibration.column.parsed_age", default="Parsed\nAge"),
+            _tr("calibration.column.override_age", default="Override\nAge"),
+            _tr("calibration.column.parsed_agg", default="Parsed\nAgg"),
+            _tr("calibration.column.override_agg", default="Override\nAgg"),
+            _tr("calibration.column.parsed_libido", default="Parsed\nLibido"),
+            _tr("calibration.column.override_libido", default="Override\nLibido"),
+            _tr("calibration.column.parsed_inbr", default="Parsed\nInbr"),
+            _tr("calibration.column.override_inbr", default="Override\nInbr"),
+            "STR", "DEX", "CON", "INT", "SPD", "CHA", "LCK",
+        ])
         current_value = self._bulk_sexuality_combo.currentData()
         self._bulk_sexuality_combo.blockSignals(True)
         self._bulk_sexuality_combo.clear()
@@ -8171,6 +8802,9 @@ class CalibrationView(QWidget):
     def _get_text_item(table: QTableWidget, row: int, col: int) -> str:
         w = table.cellWidget(row, col)
         if isinstance(w, QComboBox):
+            data = w.currentData()
+            if data is not None:
+                return str(data).strip()
             return w.currentText().strip()
         it = table.item(row, col)
         return (it.text().strip() if it is not None else "")
@@ -8178,8 +8812,11 @@ class CalibrationView(QWidget):
     @staticmethod
     def _gender_combo(value: str) -> QComboBox:
         combo = QComboBox()
-        combo.addItems(["", "male", "female", "?"])
-        idx = combo.findText((value or "").strip().lower(), Qt.MatchFixedString)
+        combo.addItem("", "")
+        combo.addItem(_gender_display_label("male"), "male")
+        combo.addItem(_gender_display_label("female"), "female")
+        combo.addItem(_gender_display_label("?"), "?")
+        idx = combo.findData((value or "").strip().lower(), Qt.MatchFixedString)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         return combo
 
@@ -8195,10 +8832,12 @@ class CalibrationView(QWidget):
         return combo
 
     @staticmethod
-    def _trait_combo(options: tuple[str, ...], value: str) -> QComboBox:
+    def _trait_combo(field: str, options: tuple[str, ...], value: str) -> QComboBox:
         combo = QComboBox()
-        combo.addItems([""] + list(options))
-        idx = combo.findText((value or "").strip().lower(), Qt.MatchFixedString)
+        combo.addItem("", "")
+        for option in options:
+            combo.addItem(_trait_display_label(field, option) or option, option)
+        idx = combo.findData((value or "").strip().lower(), Qt.MatchFixedString)
         combo.setCurrentIndex(idx if idx >= 0 else 0)
         return combo
 
@@ -8232,12 +8871,16 @@ class CalibrationView(QWidget):
             name_item = self._readonly_item(cat.name or "?")
             name_item.setData(Qt.UserRole, cat)
             self._table.setItem(row, self.COL_NAME, name_item)
-            self._table.setItem(row, self.COL_STATUS, self._readonly_item(cat.status))
+            self._table.setItem(row, self.COL_STATUS, self._readonly_item(STATUS_ABBREV.get(cat.status, cat.status)))
             self._table.setItem(row, self.COL_TOKEN, self._readonly_item(getattr(cat, "gender_token", "") or ""))
             self._table.setItem(row, self.COL_TOKEN_FIELDS, self._readonly_item(self._fmt_gender_token_fields(cat)))
-            self._table.setItem(row, self.COL_PARSED_G, self._readonly_item((getattr(cat, "parsed_gender", cat.gender) or "?")))
+            self._table.setItem(
+                row,
+                self.COL_PARSED_G,
+                self._readonly_item(_gender_display_label(getattr(cat, "parsed_gender", cat.gender) or "?")),
+            )
             self._table.setCellWidget(row, self.COL_OVR_G, self._gender_combo(str(ov.get("gender", "") or "")))
-            self._table.setItem(row, self.COL_DEFAULT_SEXUALITY, self._readonly_item("straight"))
+            self._table.setItem(row, self.COL_DEFAULT_SEXUALITY, self._readonly_item(_sexuality_display_label("straight")))
             self._table.setCellWidget(row, self.COL_OVR_SEXUALITY, self._sexuality_combo(str(ov.get("sexuality", "") or "")))
 
             self._table.setItem(row, self.COL_PARSED_AGE, self._readonly_item(self._fmt(getattr(cat, "parsed_age", None))))
@@ -8246,19 +8889,19 @@ class CalibrationView(QWidget):
             self._table.setCellWidget(
                 row,
                 self.COL_OVR_AGG,
-                self._trait_combo(_CALIBRATION_TRAIT_OPTIONS["aggression"], _trait_label_from_value("aggression", ov.get("aggression"))),
+                self._trait_combo("aggression", _CALIBRATION_TRAIT_OPTIONS["aggression"], _trait_label_from_value("aggression", ov.get("aggression"))),
             )
             self._table.setItem(row, self.COL_PARSED_LIB, self._readonly_item(self._fmt(getattr(cat, "parsed_libido", None))))
             self._table.setCellWidget(
                 row,
                 self.COL_OVR_LIB,
-                self._trait_combo(_CALIBRATION_TRAIT_OPTIONS["libido"], _trait_label_from_value("libido", ov.get("libido"))),
+                self._trait_combo("libido", _CALIBRATION_TRAIT_OPTIONS["libido"], _trait_label_from_value("libido", ov.get("libido"))),
             )
             self._table.setItem(row, self.COL_PARSED_INB, self._readonly_item(self._fmt(getattr(cat, "parsed_inbredness", None))))
             self._table.setCellWidget(
                 row,
                 self.COL_OVR_INB,
-                self._trait_combo(_CALIBRATION_TRAIT_OPTIONS["inbredness"], _trait_label_from_value("inbredness", ov.get("inbredness"))),
+                self._trait_combo("inbredness", _CALIBRATION_TRAIT_OPTIONS["inbredness"], _trait_label_from_value("inbredness", ov.get("inbredness"))),
             )
 
             # Add base stats override columns
@@ -8268,18 +8911,18 @@ class CalibrationView(QWidget):
                 current_val = cat.base_stats.get(stat_name, 0)
                 # Show current value in background, allow override
                 item = self._editable_item(str(override_val) if override_val != "" else "")
-                item.setToolTip(f"Current: {current_val}")
+                item.setToolTip(_tr("calibration.tooltip.current_stat", default="Current: {value}", value=current_val))
                 self._table.setItem(row, stat_col, item)
 
         self._table.setSortingEnabled(True)
-        self._status.setText(f"{len(self._cats)} alive cats")
+        self._status.setText(_tr("calibration.status.alive_cats", default="{count} alive cats", count=len(self._cats)))
 
     def _reload_clicked(self):
         if not self._save_path:
-            self._status.setText("No save loaded")
+            self._status.setText(_tr("sidebar.no_save_loaded", default="No save loaded"))
             return
         self.set_context(self._save_path, self._cats)
-        self._status.setText("Reloaded calibration file")
+        self._status.setText(_tr("calibration.status.reloaded", default="Reloaded calibration file"))
 
     def _collect_calibration_data(self) -> dict:
         overrides: dict[str, dict] = {}
@@ -8340,31 +8983,38 @@ class CalibrationView(QWidget):
 
     def _save_clicked(self):
         if not self._save_path:
-            self._status.setText("No save loaded")
+            self._status.setText(_tr("sidebar.no_save_loaded", default="No save loaded"))
             return
 
         data = self._collect_calibration_data()
         overrides = data.get("overrides", {}) if isinstance(data, dict) else {}
         if not _save_calibration_data(self._save_path, data):
-            self._status.setText("Failed to save calibration")
+            self._status.setText(_tr("calibration.status.save_failed", default="Failed to save calibration"))
             return
 
         explicit, token_applied, _ = _apply_calibration_data(data, self._cats)
         self._status.setText(
-            f"Saved. overrides={len(overrides)} applied={explicit} token-hints={len(data['gender_token_map'])}/{token_applied}"
+            _tr(
+                "calibration.status.saved",
+                default="Saved. overrides={overrides} applied={applied} token-hints={hint_count}/{token_applied}",
+                overrides=len(overrides),
+                applied=explicit,
+                hint_count=len(data["gender_token_map"]),
+                token_applied=token_applied,
+            )
         )
         self.calibrationChanged.emit()
 
     def _export_clicked(self):
         if not self._save_path:
-            self._status.setText("No save loaded")
+            self._status.setText(_tr("sidebar.no_save_loaded", default="No save loaded"))
             return
         default_path = _calibration_path(self._save_path)
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "Export Calibration",
+            _tr("calibration.export", default="Export Calibration"),
             default_path,
-            "Calibration JSON (*.json);;All Files (*)",
+            _tr("calibration.file_filter", default="Calibration JSON (*.json);;All Files (*)"),
         )
         if not path:
             return
@@ -8372,20 +9022,20 @@ class CalibrationView(QWidget):
         try:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=True)
-            self._status.setText(f"Exported calibration to {os.path.basename(path)}")
+            self._status.setText(_tr("calibration.status.exported", default="Exported calibration to {name}", name=os.path.basename(path)))
         except Exception:
-            self._status.setText("Failed to export calibration")
+            self._status.setText(_tr("calibration.status.export_failed", default="Failed to export calibration"))
 
     def _import_clicked(self):
         if not self._save_path:
-            self._status.setText("No save loaded")
+            self._status.setText(_tr("sidebar.no_save_loaded", default="No save loaded"))
             return
         start = os.path.dirname(_calibration_path(self._save_path))
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Import Calibration",
+            _tr("calibration.import", default="Import Calibration"),
             start,
-            "Calibration JSON (*.json);;All Files (*)",
+            _tr("calibration.file_filter", default="Calibration JSON (*.json);;All Files (*)"),
         )
         if not path:
             return
@@ -8393,10 +9043,10 @@ class CalibrationView(QWidget):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
-            self._status.setText("Failed to read calibration file")
+            self._status.setText(_tr("calibration.status.read_failed", default="Failed to read calibration file"))
             return
         if not isinstance(data, dict):
-            self._status.setText("Invalid calibration format")
+            self._status.setText(_tr("calibration.status.invalid_format", default="Invalid calibration format"))
             return
         overrides = data.get("overrides", {})
         if not isinstance(overrides, dict):
@@ -8410,12 +9060,18 @@ class CalibrationView(QWidget):
             "gender_token_map": token_map or _learn_gender_token_map(self._cats, overrides),
         }
         if not _save_calibration_data(self._save_path, normalized):
-            self._status.setText("Failed to import calibration")
+            self._status.setText(_tr("calibration.status.import_failed", default="Failed to import calibration"))
             return
         explicit, token_applied, _ = _apply_calibration_data(normalized, self._cats)
         self.set_context(self._save_path, self._cats)
         self._status.setText(
-            f"Imported. applied={explicit} token={token_applied} from {os.path.basename(path)}"
+            _tr(
+                "calibration.status.imported",
+                default="Imported. applied={applied} token={token_applied} from {name}",
+                applied=explicit,
+                token_applied=token_applied,
+                name=os.path.basename(path),
+            )
         )
         self.calibrationChanged.emit()
 
@@ -8498,16 +9154,17 @@ class MutationDisorderPlannerView(QWidget):
 
         # Header
         header = QHBoxLayout()
-        title = QLabel("Mutation & Disorder Breeding Planner")
-        title.setStyleSheet("color:#ddd; font-size:18px; font-weight:bold;")
-        header.addWidget(title)
+        self._title = QLabel()
+        self._title.setStyleSheet("color:#ddd; font-size:18px; font-weight:bold;")
+        header.addWidget(self._title)
         header.addStretch()
         root.addLayout(header)
 
         # Controls row
         controls = QHBoxLayout()
         controls.setSpacing(8)
-        controls.addWidget(QLabel("Room:"))
+        self._room_label = QLabel()
+        controls.addWidget(self._room_label)
         self._room_combo = QComboBox()
         self._room_combo.setFixedWidth(200)
         self._room_combo.setStyleSheet(
@@ -8517,7 +9174,8 @@ class MutationDisorderPlannerView(QWidget):
         self._room_combo.currentIndexChanged.connect(self._refresh_table)
         controls.addWidget(self._room_combo)
         controls.addSpacing(16)
-        controls.addWidget(QLabel("Stimulation:"))
+        self._stim_label = QLabel()
+        controls.addWidget(self._stim_label)
         self._stim_spin = QSpinBox()
         self._stim_spin.setRange(0, 100)
         self._stim_spin.setValue(50)
@@ -8529,7 +9187,7 @@ class MutationDisorderPlannerView(QWidget):
         self._stim_spin.valueChanged.connect(self._on_stim_changed)
         controls.addWidget(self._stim_spin)
         controls.addStretch()
-        self._pair_label = QLabel("Ctrl+click two cats to compare breeding outcomes")
+        self._pair_label = QLabel()
         self._pair_label.setStyleSheet("color:#666; font-size:11px;")
         controls.addWidget(self._pair_label)
         root.addLayout(controls)
@@ -8537,9 +9195,9 @@ class MutationDisorderPlannerView(QWidget):
         # Target trait row
         trait_row = QHBoxLayout()
         trait_row.setSpacing(8)
-        trait_row.addWidget(QLabel("Target Trait:"))
+        self._target_trait_label = QLabel()
+        trait_row.addWidget(self._target_trait_label)
         self._trait_search = QLineEdit()
-        self._trait_search.setPlaceholderText("Type to filter...")
         self._trait_search.setFixedWidth(160)
         self._trait_search.setClearButtonEnabled(True)
         self._trait_search.setStyleSheet(
@@ -8557,7 +9215,7 @@ class MutationDisorderPlannerView(QWidget):
         self._trait_combo.currentIndexChanged.connect(self._on_target_trait_changed)
         trait_row.addWidget(self._trait_combo)
         # "Add" button to add selected trait to the multi-select list
-        self._add_trait_btn = QPushButton("Add")
+        self._add_trait_btn = QPushButton()
         self._add_trait_btn.setFixedWidth(50)
         self._add_trait_btn.setStyleSheet(
             "QPushButton { background:#1f5f4a; color:#f2f7f3; border:1px solid #3f8f72; "
@@ -8621,11 +9279,11 @@ class MutationDisorderPlannerView(QWidget):
         traits_panel_layout.setContentsMargins(8, 6, 8, 6)
         traits_panel_layout.setSpacing(4)
         traits_header = QHBoxLayout()
-        traits_title = QLabel("Selected Traits")
-        traits_title.setStyleSheet("color:#8fb8a0; font-size:12px; font-weight:bold;")
-        traits_header.addWidget(traits_title)
+        self._traits_title = QLabel()
+        self._traits_title.setStyleSheet("color:#8fb8a0; font-size:12px; font-weight:bold;")
+        traits_header.addWidget(self._traits_title)
         traits_header.addStretch()
-        self._clear_traits_btn = QPushButton("Clear All")
+        self._clear_traits_btn = QPushButton()
         self._clear_traits_btn.setFixedHeight(22)
         self._clear_traits_btn.setStyleSheet(
             "QPushButton { background:#2a1a1a; color:#c88; border:1px solid #4a2a2a; "
@@ -8634,7 +9292,7 @@ class MutationDisorderPlannerView(QWidget):
         )
         self._clear_traits_btn.clicked.connect(self._on_clear_all_traits)
         traits_header.addWidget(self._clear_traits_btn)
-        self._find_pairs_btn = QPushButton("Find Best Pairs")
+        self._find_pairs_btn = QPushButton()
         self._find_pairs_btn.setFixedHeight(22)
         self._find_pairs_btn.setStyleSheet(
             "QPushButton { background:#1f5f4a; color:#f2f7f3; border:1px solid #3f8f72; "
@@ -8657,7 +9315,7 @@ class MutationDisorderPlannerView(QWidget):
         traits_scroll.setWidget(self._traits_list_widget)
         traits_scroll.setMaximumHeight(200)
         traits_panel_layout.addWidget(traits_scroll)
-        self._traits_empty_label = QLabel("No traits selected. Use the combo box above and click Add.")
+        self._traits_empty_label = QLabel()
         self._traits_empty_label.setStyleSheet("color:#555; font-size:10px;")
         self._traits_empty_label.setWordWrap(True)
         traits_panel_layout.addWidget(self._traits_empty_label)
@@ -8672,7 +9330,7 @@ class MutationDisorderPlannerView(QWidget):
         self._outcome_layout = QVBoxLayout(self._outcome_widget)
         self._outcome_layout.setContentsMargins(12, 8, 12, 8)
         self._outcome_layout.setSpacing(6)
-        self._outcome_placeholder = QLabel("Select two cats to see breeding outcome analysis,\nor add traits above and click 'Find Best Pairs'.")
+        self._outcome_placeholder = QLabel()
         self._outcome_placeholder.setStyleSheet("color:#555; font-size:12px;")
         self._outcome_placeholder.setWordWrap(True)
         self._outcome_layout.addWidget(self._outcome_placeholder)
@@ -8685,6 +9343,68 @@ class MutationDisorderPlannerView(QWidget):
 
         splitter.setSizes([500, 500])
         root.addWidget(splitter, 1)
+        self.retranslate_ui()
+
+    def retranslate_ui(self):
+        self._title.setText(_tr("mutation_planner.title", default="Mutation & Disorder Breeding Planner"))
+        self._room_label.setText(_tr("common.room", default="Room:"))
+        self._stim_label.setText(_tr("detail.label.stimulation", default="Stimulation:"))
+        self._target_trait_label.setText(_tr("mutation_planner.target_trait", default="Target Trait:"))
+        self._trait_search.setPlaceholderText(_tr("mutation_planner.trait_search", default="Type to filter..."))
+        self._add_trait_btn.setText(_tr("common.add", default="Add"))
+        self._traits_title.setText(_tr("mutation_planner.selected_traits", default="Selected Traits"))
+        self._clear_traits_btn.setText(_tr("mutation_planner.clear_all", default="Clear All"))
+        self._find_pairs_btn.setText(_tr("mutation_planner.find_best_pairs", default="Find Best Pairs"))
+        self._traits_empty_label.setText(_tr("mutation_planner.no_traits_selected", default="No traits selected. Use the combo box above and click Add."))
+        self._cat_table.setHorizontalHeaderLabels([
+            _tr("table.column.name", default="Name"),
+            _tr("common.gender_text", default="Gender"),
+            _tr("table.column.age", default="Age"),
+            _tr("table.column.sum", default="Sum"),
+            _tr("table.column.mutations", default="Mutations"),
+            _tr("mutation_planner.table.passives_disorders", default="Passives / Disorders"),
+            _tr("table.column.abilities", default="Abilities"),
+        ])
+        if self._selected_traits:
+            self._rebuild_traits_list()
+        if len(self._selected_pair) == 2:
+            self._set_pair_label_pair(self._selected_pair[0], self._selected_pair[1])
+        elif len(self._selected_pair) == 1:
+            self._set_pair_label_selected(self._selected_pair[0])
+        else:
+            self._set_pair_label_default()
+        if self._trait_combo.currentData() is not None:
+            self._update_trait_plan(self._trait_combo.currentData())
+        elif self._selected_traits:
+            self._update_multi_trait_plan()
+        elif len(self._selected_pair) == 2:
+            self._update_outcome_panel(self._selected_pair[0], self._selected_pair[1])
+        elif hasattr(self, "_outcome_placeholder") and self._outcome_layout.count():
+            self._clear_outcome_panel()
+
+    def _set_pair_label_default(self):
+        self._pair_label.setText(_tr(
+            "mutation_planner.pair_label.default",
+            default="Ctrl+click two cats to compare breeding outcomes",
+        ))
+        self._pair_label.setStyleSheet("color:#666; font-size:11px;")
+
+    def _set_pair_label_selected(self, cat: Cat):
+        self._pair_label.setText(_tr(
+            "mutation_planner.pair_label.selected_one",
+            default="Selected: {name} -- select one more",
+            name=cat.name,
+        ))
+        self._pair_label.setStyleSheet("color:#aa8; font-size:11px;")
+
+    def _set_pair_label_pair(self, cat_a: Cat, cat_b: Cat):
+        self._pair_label.setText(_tr(
+            "mutation_planner.pair_label.selected_pair",
+            default="Pair: {a} × {b}",
+            a=cat_a.name,
+            b=cat_b.name,
+        ))
+        self._pair_label.setStyleSheet("color:#8fb8a0; font-size:11px; font-weight:bold;")
 
     def set_cats(self, cats: list[Cat]):
         self._cats = cats
@@ -8696,7 +9416,7 @@ class MutationDisorderPlannerView(QWidget):
     def _populate_room_filter(self):
         self._room_combo.blockSignals(True)
         self._room_combo.clear()
-        self._room_combo.addItem("All Rooms", "")
+        self._room_combo.addItem(_tr("mutation_planner.all_rooms", default="All Rooms"), "")
         rooms: dict[str, str] = {}
         for cat in self._cats:
             if cat.status == "Gone" or not cat.room or cat.room == "Adventure":
@@ -8735,15 +9455,15 @@ class MutationDisorderPlannerView(QWidget):
         self._trait_items_master = []
         for key in sorted(mutations, key=lambda k: mutations[k]):
             self._trait_items_master.append(
-                (f"[Mutation] {mutations[key]}", ("mutation", key))
+                (_tr("mutation_planner.category.mutation", default="[Mutation] {name}", name=mutations[key]), ("mutation", key))
             )
         for key in sorted(passives, key=lambda k: passives[k]):
             self._trait_items_master.append(
-                (f"[Passive/Disorder] {passives[key]}", ("passive", key))
+                (_tr("mutation_planner.category.passive", default="[Passive/Disorder] {name}", name=passives[key]), ("passive", key))
             )
         for key in sorted(abilities, key=lambda k: abilities[k]):
             self._trait_items_master.append(
-                (f"[Ability] {abilities[key]}", ("ability", key))
+                (_tr("mutation_planner.category.ability", default="[Ability] {name}", name=abilities[key]), ("ability", key))
             )
 
         self._trait_search.clear()
@@ -8756,7 +9476,7 @@ class MutationDisorderPlannerView(QWidget):
     def _apply_trait_filter(self, search: str, restore_data=None):
         self._trait_combo.blockSignals(True)
         self._trait_combo.clear()
-        self._trait_combo.addItem("(none -- select a trait to plan for)", None)
+        self._trait_combo.addItem(_tr("mutation_planner.no_trait", default="(none -- select a trait to plan for)"), None)
 
         needle = search.strip().lower()
         last_category = None
@@ -8792,8 +9512,7 @@ class MutationDisorderPlannerView(QWidget):
         # Clear cat table selection so the two modes don't conflict
         self._cat_table.clearSelection()
         self._selected_pair.clear()
-        self._pair_label.setText("Ctrl+click two cats to compare breeding outcomes")
-        self._pair_label.setStyleSheet("color:#666; font-size:11px;")
+        self._set_pair_label_default()
         self._update_trait_plan(data)
 
     # ── Multi-select trait management ──
@@ -8850,7 +9569,7 @@ class MutationDisorderPlannerView(QWidget):
             lbl.setMinimumWidth(100)
             row_layout.addWidget(lbl, 1)
 
-            wt_label = QLabel("Wt:")
+            wt_label = QLabel(_tr("mutation_planner.weight", default="Wt:"))
             wt_label.setStyleSheet("color:#888; font-size:10px;")
             row_layout.addWidget(wt_label)
 
@@ -8879,7 +9598,7 @@ class MutationDisorderPlannerView(QWidget):
             ))
             row_layout.addWidget(spin)
 
-            remove_btn = QPushButton("X")
+            remove_btn = QPushButton(_tr("common.remove_short", default="X"))
             remove_btn.setFixedSize(20, 20)
             remove_btn.setStyleSheet(
                 "QPushButton { background:#2a1a1a; color:#c88; border:none; "
@@ -8897,8 +9616,7 @@ class MutationDisorderPlannerView(QWidget):
             return
         self._cat_table.clearSelection()
         self._selected_pair.clear()
-        self._pair_label.setText("Ctrl+click two cats to compare breeding outcomes")
-        self._pair_label.setStyleSheet("color:#666; font-size:11px;")
+        self._set_pair_label_default()
         self._trait_combo.blockSignals(True)
         self._trait_combo.setCurrentIndex(0)
         self._trait_combo.blockSignals(False)
@@ -8969,13 +9687,20 @@ class MutationDisorderPlannerView(QWidget):
                 child.widget().deleteLater()
 
         layout.addWidget(self._sec_label(
-            f"Multi-Trait Breeding Plan ({len(traits)} traits, max weight {max_possible})"
+            _tr(
+                "mutation_planner.multi_trait.title",
+                default="Multi-Trait Breeding Plan ({count} traits, max weight {weight})",
+                count=len(traits),
+                weight=max_possible,
+            )
         ))
 
         if not scored_pairs:
             layout.addWidget(self._info_label(
-                "No breeding pairs found that carry any of the selected traits.\n"
-                "Try selecting different traits or checking that carriers exist."
+                _tr(
+                    "mutation_planner.no_pairs_for_traits",
+                    default="No breeding pairs found that carry any of the selected traits.\nTry selecting different traits or checking that carriers exist.",
+                )
             ))
             layout.addStretch()
             return
@@ -8987,22 +9712,35 @@ class MutationDisorderPlannerView(QWidget):
 
         if full_coverage:
             layout.addWidget(self._info_label(
-                f"{len(full_coverage)} pair(s) can cover ALL positive traits."
+                _tr(
+                    "mutation_planner.multi_trait.full_coverage",
+                    default="{count} pair(s) can cover ALL positive traits.",
+                    count=len(full_coverage),
+                )
             ))
         else:
             best_covered = len(scored_pairs[0][3])
             layout.addWidget(self._info_label(
-                f"No single pair covers all {len(pos_traits)} positive traits.\n"
-                f"Best coverage: {best_covered}/{len(pos_traits)} traits."
+                _tr(
+                    "mutation_planner.multi_trait.partial_coverage",
+                    default="No single pair covers all {total} positive traits.\nBest coverage: {covered}/{total} traits.",
+                    total=len(pos_traits),
+                    covered=best_covered,
+                )
             ))
 
         # Show top pairs (limit to 20)
-        layout.addWidget(self._sec_label("Best Breeding Pairs"))
+        layout.addWidget(self._sec_label(_tr("mutation_planner.multi_trait.best_pairs", default="Best Breeding Pairs")))
         show_pairs = scored_pairs[:20]
 
         pair_table = QTableWidget(len(show_pairs), 6)
         pair_table.setHorizontalHeaderLabels([
-            "Parent A", "Parent B", "Score", "Coverage", "Uncovered / Penalized", "Inbreeding"
+            _tr("mutation_planner.table.parent_a", default="Parent A"),
+            _tr("mutation_planner.table.parent_b", default="Parent B"),
+            _tr("mutation_planner.table.score", default="Score"),
+            _tr("common.coverage", default="Coverage"),
+            _tr("mutation_planner.table.uncovered_penalized", default="Uncovered / Penalized"),
+            _tr("table.column.inbred", default="Inbreeding"),
         ])
         pair_table.verticalHeader().setVisible(False)
         pair_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -9030,16 +9768,16 @@ class MutationDisorderPlannerView(QWidget):
             a_item = QTableWidgetItem(f"{a.name} ({a.gender_display})")
             a_item.setData(Qt.UserRole, a.db_key)
             a_item.setForeground(QColor("#5b9bd5"))
-            a_item.setToolTip("Click to jump to this cat in Alive Cats view")
+            a_item.setToolTip(_tr("common.tooltip.jump_to_alive", default="Click to jump to this cat in Alive Cats view"))
             pair_table.setItem(row, 0, a_item)
 
             b_item = QTableWidgetItem(f"{b.name} ({b.gender_display})")
             b_item.setData(Qt.UserRole, b.db_key)
             b_item.setForeground(QColor("#5b9bd5"))
-            b_item.setToolTip("Click to jump to this cat in Alive Cats view")
+            b_item.setToolTip(_tr("common.tooltip.jump_to_alive", default="Click to jump to this cat in Alive Cats view"))
             pair_table.setItem(row, 1, b_item)
 
-            score_item = QTableWidgetItem(f"{score:.0f}/{max_possible}")
+            score_item = QTableWidgetItem(f"{score:.0f}/{max_possible:.0f}")
             score_item.setTextAlignment(Qt.AlignCenter)
             if score >= max_possible:
                 score_item.setForeground(QColor("#8fb8a0"))
@@ -9061,7 +9799,7 @@ class MutationDisorderPlannerView(QWidget):
                 unc_item.setForeground(QColor("#cc8833") if penalized else QColor("#cc6666"))
                 pair_table.setItem(row, 4, unc_item)
             else:
-                full_item = QTableWidgetItem("All covered")
+                full_item = QTableWidgetItem(_tr("mutation_planner.multi_trait.all_covered", default="All covered"))
                 full_item.setForeground(QColor("#8fb8a0"))
                 pair_table.setItem(row, 4, full_item)
 
@@ -9074,7 +9812,7 @@ class MutationDisorderPlannerView(QWidget):
         layout.addWidget(pair_table)
 
         # Per-trait carrier summary
-        layout.addWidget(self._sec_label("Trait Carrier Summary"))
+        layout.addWidget(self._sec_label(_tr("mutation_planner.multi_trait.carrier_summary", default="Trait Carrier Summary")))
         for t in traits:
             carriers = [c for c in alive if _cat_has_trait(c, t["category"], t["key"])]
             trait_short = t["display"].split("] ")[-1]
@@ -9086,8 +9824,21 @@ class MutationDisorderPlannerView(QWidget):
                 prefix = ""
                 color = "#8fb8a0" if carriers else "#cc6666"
             lbl = self._info_label(
-                f"  {prefix}{trait_short} (wt {w}): {len(carriers)} carrier(s)"
-                + (f" -- {', '.join(c.name for c in carriers[:8])}" if carriers else " -- NONE")
+                _tr(
+                    "mutation_planner.multi_trait.carrier_line",
+                    default="{prefix}{trait} (wt {weight}): {count} carrier(s)",
+                    prefix=prefix,
+                    trait=trait_short,
+                    weight=w,
+                    count=len(carriers),
+                ) + (
+                    _tr(
+                        "mutation_planner.multi_trait.carrier_names_suffix",
+                        default=" -- {names}",
+                        names=", ".join(c.name for c in carriers[:8]),
+                    )
+                    if carriers else _tr("mutation_planner.multi_trait.none_suffix", default=" -- NONE")
+                )
             )
             lbl.setStyleSheet(f"color:{color}; font-size:11px;")
             layout.addWidget(lbl)
@@ -9125,7 +9876,11 @@ class MutationDisorderPlannerView(QWidget):
 
         # Display name for the trait
         trait_display = self._trait_combo.currentText()
-        self._trait_info_label.setText(f"{len(carriers)} carrier(s) found")
+        self._trait_info_label.setText(_tr(
+            "mutation_planner.trait_info.carriers_found",
+            default="{count} carrier(s) found",
+            count=len(carriers),
+        ))
         self._trait_info_label.setStyleSheet(
             f"color:{'#8fb8a0' if carriers else '#cc6666'}; font-size:11px;"
         )
@@ -9137,17 +9892,33 @@ class MutationDisorderPlannerView(QWidget):
             if child.widget():
                 child.widget().deleteLater()
 
-        layout.addWidget(self._sec_label(f"Breeding Plan: {trait_display}"))
+        layout.addWidget(self._sec_label(_tr(
+            "mutation_planner.single_trait.plan_title",
+            default="Breeding Plan: {trait}",
+            trait=trait_display,
+        )))
 
         # ── Carriers ──
-        layout.addWidget(self._sec_label(f"Carriers ({len(carriers)} cats)"))
+        layout.addWidget(self._sec_label(_tr(
+            "mutation_planner.single_trait.carriers_title",
+            default="Carriers ({count} cats)",
+            count=len(carriers),
+        )))
         if not carriers:
-            layout.addWidget(self._info_label("No living cats have this trait."))
+            layout.addWidget(self._info_label(_tr(
+                "mutation_planner.single_trait.no_living_carriers",
+                default="No living cats have this trait.",
+            )))
             layout.addStretch()
             return
 
         carrier_table = QTableWidget(len(carriers), 4)
-        carrier_table.setHorizontalHeaderLabels(["Name", "Gender", "Age", "Room"])
+        carrier_table.setHorizontalHeaderLabels([
+            _tr("table.column.name", default="Name"),
+            _tr("common.gender_text", default="Gender"),
+            _tr("table.column.age", default="Age"),
+            _tr("table.column.room", default="Room"),
+        ])
         carrier_table.verticalHeader().setVisible(False)
         carrier_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         carrier_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -9175,38 +9946,40 @@ class MutationDisorderPlannerView(QWidget):
         layout.addWidget(carrier_table)
 
         # ── Inheritance mechanics ──
-        layout.addWidget(self._sec_label("Inheritance Mechanics"))
+        layout.addWidget(self._sec_label(_tr("mutation_planner.single_trait.inheritance_mechanics", default="Inheritance Mechanics")))
         if category == "mutation":
             favor_weight = _stimulation_inheritance_weight(stim)
             layout.addWidget(self._info_label(
-                f"Visual mutations: 80% chance all parts inherited. "
-                f"Mutated part favored at {favor_weight*100:.1f}% (stim {stim}).\n\n"
-                "Strategy: Breed a carrier with any cat. The offspring has a high "
-                "chance of inheriting the mutated body part(s) from the carrier parent."
+                _tr(
+                    "mutation_planner.single_trait.inheritance_mutation",
+                    default="Visual mutations: 80% chance all parts inherited. Mutated part favored at {percent:.1f}% (stim {stim}).\n\nStrategy: Breed a carrier with any cat. The offspring has a high chance of inheriting the mutated body part(s) from the carrier parent.",
+                    percent=favor_weight * 100,
+                    stim=stim,
+                )
             ))
         elif category == "passive":
             passive_chance = 0.05 + 0.01 * stim
             layout.addWidget(self._info_label(
-                f"Passive/disorder inheritance: {min(passive_chance, 1.0)*100:.1f}% "
-                f"chance per breeding (stim {stim}), 50/50 parent pick.\n"
-                f"If both parents carry it: ~{min(passive_chance, 1.0)*100:.1f}% chance, "
-                "but either parent can pass it.\n"
-                "Disorders specifically: 15% flat chance from each parent.\n\n"
-                "Strategy: Pair two carriers together for the best odds. "
-                "If only one carrier exists, breed them and hope for inheritance, "
-                "then breed carriers from the next generation together."
+                _tr(
+                    "mutation_planner.single_trait.inheritance_passive",
+                    default="Passive/disorder inheritance: {percent:.1f}% chance per breeding (stim {stim}), 50/50 parent pick.\nIf both parents carry it: ~{percent:.1f}% chance, but either parent can pass it.\nDisorders specifically: 15% flat chance from each parent.\n\nStrategy: Pair two carriers together for the best odds. If only one carrier exists, breed them and hope for inheritance, then breed carriers from the next generation together.",
+                    percent=min(passive_chance, 1.0) * 100,
+                    stim=stim,
+                )
             ))
         elif category == "ability":
             spell_chance = 0.2 + 0.025 * stim
             layout.addWidget(self._info_label(
-                f"Spell/ability inheritance: {min(spell_chance, 1.0)*100:.1f}% "
-                f"chance per breeding (stim {stim}), 50/50 parent pick.\n\n"
-                "Strategy: Breed a carrier with any cat. If both parents have the "
-                "ability, either can pass it."
+                _tr(
+                    "mutation_planner.single_trait.inheritance_ability",
+                    default="Spell/ability inheritance: {percent:.1f}% chance per breeding (stim {stim}), 50/50 parent pick.\n\nStrategy: Breed a carrier with any cat. If both parents have the ability, either can pass it.",
+                    percent=min(spell_chance, 1.0) * 100,
+                    stim=stim,
+                )
             ))
 
         # ── Recommended pairs ──
-        layout.addWidget(self._sec_label("Recommended Breeding Pairs"))
+        layout.addWidget(self._sec_label(_tr("mutation_planner.single_trait.recommended_pairs", default="Recommended Breeding Pairs")))
 
         males = [c for c in carriers if c.gender and c.gender.upper() in ("M", "MALE")]
         females = [c for c in carriers if c.gender and c.gender.upper() in ("F", "FEMALE")]
@@ -9224,9 +9997,13 @@ class MutationDisorderPlannerView(QWidget):
                 inbred_a = m.inbredness if m.inbredness is not None else 0.0
                 inbred_b = f.inbredness if f.inbredness is not None else 0.0
                 avg_inbred = (inbred_a + inbred_b) / 2.0
-                note = "Both carriers"
+                note = _tr("mutation_planner.single_trait.note.both_carriers", default="Both carriers")
                 if avg_inbred > 0.2:
-                    note += f" (inbreeding {avg_inbred:.0%} -- birth defect risk)"
+                    note += _tr(
+                        "mutation_planner.single_trait.note.inbreeding_risk",
+                        default=" (inbreeding {percent:.0%} -- birth defect risk)",
+                        percent=avg_inbred,
+                    )
                 pairs.append((m, f, note))
 
         # Good: carrier x non-carrier (opposite gender)
@@ -9234,7 +10011,7 @@ class MutationDisorderPlannerView(QWidget):
             for carrier in carriers:
                 pool = nc_females if carrier.gender and carrier.gender.upper() in ("M", "MALE") else nc_males
                 for partner in pool[:5]:  # limit to avoid huge lists
-                    pairs.append((carrier, partner, "One carrier"))
+                    pairs.append((carrier, partner, _tr("mutation_planner.single_trait.note.one_carrier", default="One carrier")))
                     if len(pairs) >= 15:
                         break
                 if len(pairs) >= 15:
@@ -9243,17 +10020,27 @@ class MutationDisorderPlannerView(QWidget):
         if not pairs:
             if len(carriers) == 1:
                 layout.addWidget(self._info_label(
-                    f"Only one carrier ({carriers[0].name}). "
-                    "Breed with any opposite-gender cat and select this trait again "
-                    "after offspring are born to find new carriers."
+                    _tr(
+                        "mutation_planner.single_trait.only_one_carrier",
+                        default="Only one carrier ({name}). Breed with any opposite-gender cat and select this trait again after offspring are born to find new carriers.",
+                        name=carriers[0].name,
+                    )
                 ))
             else:
                 layout.addWidget(self._info_label(
-                    "No opposite-gender pairs found among carriers or available cats."
+                    _tr(
+                        "mutation_planner.single_trait.no_pairs_available",
+                        default="No opposite-gender pairs found among carriers or available cats.",
+                    )
                 ))
         else:
             pair_table = QTableWidget(len(pairs), 4)
-            pair_table.setHorizontalHeaderLabels(["Parent A", "Parent B", "Note", "Inbreeding"])
+            pair_table.setHorizontalHeaderLabels([
+                _tr("mutation_planner.table.parent_a", default="Parent A"),
+                _tr("mutation_planner.table.parent_b", default="Parent B"),
+                _tr("common.details", default="Details"),
+                _tr("table.column.inbred", default="Inbreeding"),
+            ])
             pair_table.verticalHeader().setVisible(False)
             pair_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
             pair_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -9350,8 +10137,7 @@ class MutationDisorderPlannerView(QWidget):
 
         if len(selected) == 2:
             self._selected_pair = selected
-            self._pair_label.setText(f"Pair: {selected[0].name} \u00d7 {selected[1].name}")
-            self._pair_label.setStyleSheet("color:#8fb8a0; font-size:11px; font-weight:bold;")
+            self._set_pair_label_pair(selected[0], selected[1])
             # Clear trait dropdown so pair view takes over
             self._trait_combo.blockSignals(True)
             self._trait_combo.setCurrentIndex(0)
@@ -9360,14 +10146,12 @@ class MutationDisorderPlannerView(QWidget):
             self._update_outcome_panel(selected[0], selected[1])
         elif len(selected) == 1:
             self._selected_pair = selected
-            self._pair_label.setText(f"Selected: {selected[0].name} -- select one more")
-            self._pair_label.setStyleSheet("color:#aa8; font-size:11px;")
+            self._set_pair_label_selected(selected[0])
             if self._trait_combo.currentData() is None:
                 self._clear_outcome_panel()
         else:
             self._selected_pair.clear()
-            self._pair_label.setText("Ctrl+click two cats to compare breeding outcomes")
-            self._pair_label.setStyleSheet("color:#666; font-size:11px;")
+            self._set_pair_label_default()
             if self._trait_combo.currentData() is None:
                 self._clear_outcome_panel()
 
@@ -9377,7 +10161,10 @@ class MutationDisorderPlannerView(QWidget):
             child = layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
-        self._outcome_placeholder = QLabel("Select two cats to see breeding outcome analysis.")
+        self._outcome_placeholder = QLabel(_tr(
+            "mutation_planner.outcome_placeholder",
+            default="Select two cats to see breeding outcome analysis.",
+        ))
         self._outcome_placeholder.setStyleSheet("color:#555; font-size:12px;")
         self._outcome_placeholder.setWordWrap(True)
         layout.addWidget(self._outcome_placeholder)
@@ -9410,9 +10197,12 @@ class MutationDisorderPlannerView(QWidget):
         ))
 
         # ── Disorder Inheritance ──
-        layout.addWidget(self._sec_label("Disorder Inheritance"))
+        layout.addWidget(self._sec_label(_tr("mutation_planner.outcome.disorder_title", default="Disorder Inheritance")))
         layout.addWidget(self._info_label(
-            "Each parent has a flat 15% chance per disorder to pass it down."
+            _tr(
+                "mutation_planner.outcome.disorder_intro",
+                default="Each parent has a flat 15% chance per disorder to pass it down.",
+            )
         ))
 
         a_disorders = cat_a.disorders or []
@@ -9429,47 +10219,81 @@ class MutationDisorderPlannerView(QWidget):
                 b_has = any(other.lower() == key for other in b_disorders)
                 if b_has:
                     pct = 1.0 - (0.85 * 0.85)  # both parents: ~27.75%
-                    disorder_rows.append(f"  {name}: {pct*100:.1f}% (both parents)")
+                    disorder_rows.append(_tr(
+                        "mutation_planner.outcome.disorder.both_parents",
+                        default="  {name}: {percent:.1f}% (both parents)",
+                        name=name,
+                        percent=pct * 100,
+                    ))
                 else:
-                    disorder_rows.append(f"  {name}: 15% (from {cat_a.name})")
+                    disorder_rows.append(_tr(
+                        "mutation_planner.outcome.disorder.one_parent",
+                        default="  {name}: 15% (from {parent})",
+                        name=name,
+                        parent=cat_a.name,
+                    ))
         for disorder in b_disorders:
             key = disorder.lower()
             if key not in seen:
                 seen.add(key)
                 name = _mutation_display_name(disorder)
-                disorder_rows.append(f"  {name}: 15% (from {cat_b.name})")
+                disorder_rows.append(_tr(
+                    "mutation_planner.outcome.disorder.one_parent",
+                    default="  {name}: 15% (from {parent})",
+                    name=name,
+                    parent=cat_b.name,
+                ))
 
         if disorder_rows:
             layout.addWidget(self._info_label("\n".join(disorder_rows)))
         else:
-            layout.addWidget(self._info_label("  Neither parent has disorders to pass."))
+            layout.addWidget(self._info_label(_tr(
+                "mutation_planner.outcome.disorder.none",
+                default="  Neither parent has disorders to pass.",
+            )))
 
         # Birth defect risk breakdown
         coi = kinship_coi(cat_a, cat_b)
         disorder_ch, part_defect_ch, combined_ch = _malady_breakdown(coi)
         inbred_note = ""
         if cat_a.inbredness is None and cat_b.inbredness is None:
-            inbred_note = " (parent inbreeding unknown, assuming 0)"
+            inbred_note = _tr(
+                "mutation_planner.outcome.risk.unknown_parent_inbreeding",
+                default=" (parent inbreeding unknown, assuming 0)",
+            )
         layout.addWidget(self._info_label(
-            f"  Disorder chance: {disorder_ch*100:.1f}%  (base 2%, scales above 0.20 CoI)\n"
-            f"  Part defect chance: {part_defect_ch*100:.1f}%  (0 below 0.05 CoI, then 1.5x CoI)\n"
-            f"  Combined risk: {combined_ch*100:.1f}%{inbred_note}"
+            _tr(
+                "mutation_planner.outcome.risk.summary",
+                default="  Disorder chance: {disorder:.1f}%  (base 2%, scales above 0.20 CoI)\n  Part defect chance: {defect:.1f}%  (0 below 0.05 CoI, then 1.5x CoI)\n  Combined risk: {combined:.1f}%{note}",
+                disorder=disorder_ch * 100,
+                defect=part_defect_ch * 100,
+                combined=combined_ch * 100,
+                note=inbred_note,
+            )
         ))
 
         note_lbl = QLabel(
-            "Note: This view uses parsed disorder slots from the save file.\n"
-            "Passive abilities are tracked separately and are not included\n"
-            "in these disorder inheritance odds."
+            _tr(
+                "mutation_planner.outcome.disorder.note",
+                default="Note: This view uses parsed disorder slots from the save file.\nPassive abilities are tracked separately and are not included\nin these disorder inheritance odds.",
+            )
         )
         note_lbl.setStyleSheet("color:#665; font-size:10px; font-style:italic;")
         note_lbl.setWordWrap(True)
         layout.addWidget(note_lbl)
 
         # ── Visual Mutation Inheritance ──
-        layout.addWidget(self._sec_label("Mutation Inheritance (Visual Parts)"))
+        layout.addWidget(self._sec_label(_tr(
+            "mutation_planner.outcome.mutation_title",
+            default="Mutation Inheritance (Visual Parts)",
+        )))
         layout.addWidget(self._info_label(
-            f"80% chance all parts are inherited. Stimulation {stim}: "
-            f"mutated parts favored at {favor_weight*100:.1f}%."
+            _tr(
+                "mutation_planner.outcome.mutation_intro",
+                default="80% chance all parts are inherited. Stimulation {stim}: mutated parts favored at {percent:.1f}%.",
+                stim=stim,
+                percent=favor_weight * 100,
+            )
         ))
 
         # Group mutations by group_key
@@ -9485,7 +10309,12 @@ class MutationDisorderPlannerView(QWidget):
         all_groups = sorted(set(list(a_by_group.keys()) + list(b_by_group.keys())))
         if all_groups:
             mut_table = QTableWidget(len(all_groups), 4)
-            mut_table.setHorizontalHeaderLabels(["Body Part", cat_a.name, cat_b.name, "Odds"])
+            mut_table.setHorizontalHeaderLabels([
+                _tr("mutation_planner.table.body_part", default="Body Part"),
+                cat_a.name,
+                cat_b.name,
+                _tr("mutation_planner.table.odds", default="Odds"),
+            ])
             mut_table.verticalHeader().setVisible(False)
             mut_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
             mut_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -9507,23 +10336,38 @@ class MutationDisorderPlannerView(QWidget):
                 part_label = a_entries[0].get("part_label", gk) if a_entries else (
                     b_entries[0].get("part_label", gk) if b_entries else gk
                 )
-                a_names = ", ".join(e.get("name", "?") for e in a_entries) or "Base"
-                b_names = ", ".join(e.get("name", "?") for e in b_entries) or "Base"
+                a_names = ", ".join(e.get("name", "?") for e in a_entries) or _tr("detail.appearance.base", default="Base")
+                b_names = ", ".join(e.get("name", "?") for e in b_entries) or _tr("detail.appearance.base", default="Base")
 
                 a_has_mutation = bool(a_entries)
                 b_has_mutation = bool(b_entries)
 
                 if a_has_mutation and b_has_mutation:
                     if a_names == b_names:
-                        odds_text = "Same mutation"
+                        odds_text = _tr("mutation_planner.outcome.mutation.same", default="Same mutation")
                     else:
-                        odds_text = f"{cat_a.name}: 50% / {cat_b.name}: 50%"
+                        odds_text = _tr(
+                            "mutation_planner.outcome.mutation.split",
+                            default="{a}: 50% / {b}: 50%",
+                            a=cat_a.name,
+                            b=cat_b.name,
+                        )
                 elif a_has_mutation:
-                    odds_text = f"Mutated ({cat_a.name}): {favor_weight*100:.0f}%"
+                    odds_text = _tr(
+                        "mutation_planner.outcome.mutation.one_parent",
+                        default="Mutated ({parent}): {percent:.0f}%",
+                        parent=cat_a.name,
+                        percent=favor_weight * 100,
+                    )
                 elif b_has_mutation:
-                    odds_text = f"Mutated ({cat_b.name}): {favor_weight*100:.0f}%"
+                    odds_text = _tr(
+                        "mutation_planner.outcome.mutation.one_parent",
+                        default="Mutated ({parent}): {percent:.0f}%",
+                        parent=cat_b.name,
+                        percent=favor_weight * 100,
+                    )
                 else:
-                    odds_text = "No mutations"
+                    odds_text = _tr("mutation_planner.outcome.mutation.none", default="No mutations")
 
                 mut_table.setItem(row, 0, QTableWidgetItem(part_label))
                 mut_table.setItem(row, 1, QTableWidgetItem(a_names))
@@ -9532,21 +10376,31 @@ class MutationDisorderPlannerView(QWidget):
 
             layout.addWidget(mut_table)
         else:
-            layout.addWidget(self._info_label("  No visual mutations on either parent."))
+            layout.addWidget(self._info_label(_tr(
+                "mutation_planner.outcome.mutation.no_visual",
+                default="  No visual mutations on either parent.",
+            )))
 
         # ── Passive Inheritance ──
-        layout.addWidget(self._sec_label("Passive / Ability Inheritance"))
+        layout.addWidget(self._sec_label(_tr(
+            "mutation_planner.outcome.passive_title",
+            default="Passive / Ability Inheritance",
+        )))
         passive_chance = 0.05 + 0.01 * stim
         spell_chance = 0.2 + 0.025 * stim
+        a_passives = list(cat_a.passive_abilities or [])
+        b_passives = list(cat_b.passive_abilities or [])
         layout.addWidget(self._info_label(
-            f"Passive inheritance chance: {min(passive_chance, 1.0)*100:.1f}% "
-            f"(50/50 parent pick)\n"
-            f"Spell inheritance chance: {min(spell_chance, 1.0)*100:.1f}% "
-            f"(50/50 parent pick)"
+            _tr(
+                "mutation_planner.outcome.passive_intro",
+                default="Passive inheritance chance: {passive:.1f}% (50/50 parent pick)\nSpell inheritance chance: {spell:.1f}% (50/50 parent pick)",
+                passive=min(passive_chance, 1.0) * 100,
+                spell=min(spell_chance, 1.0) * 100,
+            )
         ))
 
         if a_passives or b_passives:
-            chips, share_a, share_b = _inheritance_candidates(
+            chips, _, _ = _inheritance_candidates(
                 a_passives, b_passives, stim, _mutation_display_name,
             )
             passive_lines = []
@@ -9554,8 +10408,11 @@ class MutationDisorderPlannerView(QWidget):
                 passive_lines.append(f"  {label}")
             if passive_lines:
                 layout.addWidget(self._info_label(
-                    "If a passive IS inherited, weighted odds per entry:\n" +
-                    "\n".join(passive_lines)
+                    _tr(
+                        "mutation_planner.outcome.passive_weighted",
+                        default="If a passive IS inherited, weighted odds per entry:\n{lines}",
+                        lines="\n".join(passive_lines),
+                    )
                 ))
 
         if cat_a.abilities or cat_b.abilities:
@@ -9568,18 +10425,31 @@ class MutationDisorderPlannerView(QWidget):
                 spell_lines.append(f"  {label}")
             if spell_lines:
                 layout.addWidget(self._info_label(
-                    "If a spell IS inherited, weighted odds per entry:\n" +
-                    "\n".join(spell_lines)
+                    _tr(
+                        "mutation_planner.outcome.spell_weighted",
+                        default="If a spell IS inherited, weighted odds per entry:\n{lines}",
+                        lines="\n".join(spell_lines),
+                    )
                 ))
 
         # ── Stat Inheritance ──
-        layout.addWidget(self._sec_label("Stat Inheritance"))
+        layout.addWidget(self._sec_label(_tr("mutation_planner.outcome.stat_title", default="Stat Inheritance")))
         layout.addWidget(self._info_label(
-            f"Better stat favored at {favor_weight*100:.1f}% (stim {stim})."
+            _tr(
+                "mutation_planner.outcome.stat_intro",
+                default="Better stat favored at {percent:.1f}% (stim {stim}).",
+                percent=favor_weight * 100,
+                stim=stim,
+            )
         ))
 
         stat_table = QTableWidget(7, 4)
-        stat_table.setHorizontalHeaderLabels(["Stat", cat_a.name, cat_b.name, "Offspring likely"])
+        stat_table.setHorizontalHeaderLabels([
+            _tr("mutation_planner.table.stat", default="Stat"),
+            cat_a.name,
+            cat_b.name,
+            _tr("mutation_planner.table.offspring_likely", default="Offspring likely"),
+        ])
         stat_table.verticalHeader().setVisible(False)
         stat_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         stat_table.setSelectionMode(QAbstractItemView.NoSelection)
@@ -9600,11 +10470,29 @@ class MutationDisorderPlannerView(QWidget):
             a_val = cat_a.base_stats.get(stat_name, 0)
             b_val = cat_b.base_stats.get(stat_name, 0)
             if a_val == b_val:
-                likely = f"{a_val} (same)"
+                likely = _tr(
+                    "mutation_planner.outcome.stat.same",
+                    default="{value} (same)",
+                    value=a_val,
+                )
             elif a_val > b_val:
-                likely = f"{a_val} ({favor_weight*100:.0f}%) or {b_val} ({(1-favor_weight)*100:.0f}%)"
+                likely = _tr(
+                    "mutation_planner.outcome.stat.split",
+                    default="{high} ({high_pct:.0f}%) or {low} ({low_pct:.0f}%)",
+                    high=a_val,
+                    high_pct=favor_weight * 100,
+                    low=b_val,
+                    low_pct=(1 - favor_weight) * 100,
+                )
             else:
-                likely = f"{b_val} ({favor_weight*100:.0f}%) or {a_val} ({(1-favor_weight)*100:.0f}%)"
+                likely = _tr(
+                    "mutation_planner.outcome.stat.split",
+                    default="{high} ({high_pct:.0f}%) or {low} ({low_pct:.0f}%)",
+                    high=b_val,
+                    high_pct=favor_weight * 100,
+                    low=a_val,
+                    low_pct=(1 - favor_weight) * 100,
+                )
 
             stat_table.setItem(row, 0, QTableWidgetItem(stat_name))
             a_item = QTableWidgetItem(str(a_val))
@@ -9618,19 +10506,31 @@ class MutationDisorderPlannerView(QWidget):
         layout.addWidget(stat_table)
 
         # ── Lineage Info ──
-        layout.addWidget(self._sec_label("Lineage"))
+        layout.addWidget(self._sec_label(_tr("detail.section.lineage", default="LINEAGE")))
         lineage_lines = []
         for label, cat in [(cat_a.name, cat_a), (cat_b.name, cat_b)]:
-            pa_name = cat.parent_a.name if cat.parent_a else "Unknown"
-            pb_name = cat.parent_b.name if cat.parent_b else "Unknown"
+            pa_name = cat.parent_a.name if cat.parent_a else _tr("common.unknown", default="Unknown")
+            pb_name = cat.parent_b.name if cat.parent_b else _tr("common.unknown", default="Unknown")
             inbred_str = f"{cat.inbredness:.2f}" if cat.inbredness is not None else "?"
-            lineage_lines.append(f"{label}: parents = {pa_name} \u00d7 {pb_name}, inbreeding = {inbred_str}")
+            lineage_lines.append(_tr(
+                "mutation_planner.outcome.lineage.parents",
+                default="{name}: parents = {parent_a} × {parent_b}, inbreeding = {inbredness}",
+                name=label,
+                parent_a=pa_name,
+                parent_b=pb_name,
+                inbredness=inbred_str,
+            ))
 
             # Show grandparent disorders if available
-            for gp_label, gp in [("  GP", cat.parent_a), ("  GP", cat.parent_b)]:
+            for gp in (cat.parent_a, cat.parent_b):
                 if gp is not None and gp.passive_abilities:
                     gp_passives = ", ".join(_mutation_display_name(p) for p in gp.passive_abilities)
-                    lineage_lines.append(f"    {gp.name} passives: {gp_passives}")
+                    lineage_lines.append(_tr(
+                        "mutation_planner.outcome.lineage.passives",
+                        default="    {name} passives: {passives}",
+                        name=gp.name,
+                        passives=gp_passives,
+                    ))
 
         layout.addWidget(self._info_label("\n".join(lineage_lines)))
 
@@ -10020,7 +10920,11 @@ class MainWindow(QMainWindow):
 
         self._btn_exceptional = _sidebar_btn(f"{_tr('sidebar.button.exceptional')}  (>= {EXCEPTIONAL_SUM_THRESHOLD})")
         self._btn_exceptional.setToolTip(
-            f"Exceptional breeders: base stat sum >= {EXCEPTIONAL_SUM_THRESHOLD}."
+            _tr(
+                "sidebar.tooltip.exceptional",
+                default="Exceptional breeders: base stat sum >= {threshold}.",
+                threshold=EXCEPTIONAL_SUM_THRESHOLD,
+            )
         )
         self._btn_exceptional.clicked.connect(
             lambda: self._filter("__exceptional__", self._btn_exceptional)
@@ -10030,9 +10934,12 @@ class MainWindow(QMainWindow):
 
         self._btn_donation = _sidebar_btn(f"{_tr('sidebar.button.donation_candidates')}  (<= {DONATION_SUM_THRESHOLD})")
         self._btn_donation.setToolTip(
-            "Donation candidates use documented heuristics: "
-            f"base stat sum <= {DONATION_SUM_THRESHOLD}, "
-            f"top stat <= {DONATION_MAX_TOP_STAT}, and/or high aggression."
+            _tr(
+                "sidebar.tooltip.donation",
+                default="Donation candidates use documented heuristics: base stat sum <= {sum_threshold}, top stat <= {top_stat}, and/or high aggression.",
+                sum_threshold=DONATION_SUM_THRESHOLD,
+                top_stat=DONATION_MAX_TOP_STAT,
+            )
         )
         self._btn_donation.clicked.connect(
             lambda: self._filter("__donation__", self._btn_donation)
@@ -10179,6 +11086,17 @@ class MainWindow(QMainWindow):
             self._breeding_partners_view.retranslate_ui()
         if self._calibration_view is not None:
             self._calibration_view.retranslate_ui()
+        if self._tree_view is not None:
+            self._tree_view.retranslate_ui()
+        if self._breeding_partners_view is not None:
+            self._breeding_partners_view.retranslate_ui()
+        if self._room_optimizer_view is not None:
+            self._room_optimizer_view.retranslate_ui()
+        if self._perfect_planner_view is not None:
+            self._perfect_planner_view.retranslate_ui()
+        if self._mutation_planner_view is not None:
+            self._mutation_planner_view.retranslate_ui()
+        self._on_selection()
 
     def _change_language(self, language: str):
         if language not in _SUPPORTED_LANGUAGES or language == _current_language():
@@ -10591,7 +11509,7 @@ class MainWindow(QMainWindow):
         if alive_view:
             cats = self._selected_cats()
             if not cats:
-                self.statusBar().showMessage("Select cats first, then click Toggle Breeding Block")
+                self.statusBar().showMessage(_tr("bulk.status.select_toggle_breeding_block", default="Select cats first, then click Toggle Breeding Block"))
                 return
             changed = 0
             for cat in cats:
@@ -10600,7 +11518,7 @@ class MainWindow(QMainWindow):
                     cat.must_breed = False
                 changed += 1
             self._emit_bulk_toggle_refresh()
-            self.statusBar().showMessage(f"Toggled breeding block for {changed} selected cats")
+            self.statusBar().showMessage(_tr("bulk.status.toggled_breeding_block", default="Toggled breeding block for {count} selected cats", count=changed))
             return
         target_state = False if exceptional_view else self._bulk_blacklist_btn.isChecked()
         changed = 0
@@ -10613,14 +11531,14 @@ class MainWindow(QMainWindow):
             changed += 1
         self._refresh_bulk_view_buttons()
         if changed == 0:
-            self.statusBar().showMessage("No cats in view needed a breeding-block change")
+            self.statusBar().showMessage(_tr("bulk.status.no_breeding_block_change", default="No cats in view needed a breeding-block change"))
             return
         self._emit_bulk_toggle_refresh()
         if exceptional_view:
-            self.statusBar().showMessage(f"Cleared breeding block for {changed} cats in the current exceptional view")
+            self.statusBar().showMessage(_tr("bulk.status.cleared_breeding_block_exceptional", default="Cleared breeding block for {count} cats in the current exceptional view", count=changed))
         else:
-            state_text = "on" if target_state else "off"
-            self.statusBar().showMessage(f"Turned breeding block {state_text} for {changed} cats in the current view")
+            state_text = _tr("common.on", default="on") if target_state else _tr("common.off", default="off")
+            self.statusBar().showMessage(_tr("bulk.status.turned_breeding_block", default="Turned breeding block {state} for {count} cats in the current view", state=state_text, count=changed))
 
     def _toggle_must_breed_filtered_cats(self):
         room_key = None
@@ -10634,7 +11552,7 @@ class MainWindow(QMainWindow):
         if alive_view:
             cats = self._selected_cats()
             if not cats:
-                self.statusBar().showMessage("Select cats first, then click Toggle Must Breed")
+                self.statusBar().showMessage(_tr("bulk.status.select_toggle_must_breed", default="Select cats first, then click Toggle Must Breed"))
                 return
             changed = 0
             for cat in cats:
@@ -10643,7 +11561,7 @@ class MainWindow(QMainWindow):
                     cat.is_blacklisted = False
                 changed += 1
             self._emit_bulk_toggle_refresh()
-            self.statusBar().showMessage(f"Toggled must breed for {changed} selected cats")
+            self.statusBar().showMessage(_tr("bulk.status.toggled_must_breed", default="Toggled must breed for {count} selected cats", count=changed))
             return
         target_state = False if donation_view else self._bulk_must_breed_btn.isChecked()
         changed = 0
@@ -10656,14 +11574,14 @@ class MainWindow(QMainWindow):
             changed += 1
         self._refresh_bulk_view_buttons()
         if changed == 0:
-            self.statusBar().showMessage("No cats in view needed a must-breed change")
+            self.statusBar().showMessage(_tr("bulk.status.no_must_breed_change", default="No cats in view needed a must-breed change"))
             return
         self._emit_bulk_toggle_refresh()
         if donation_view:
-            self.statusBar().showMessage(f"Cleared Must Breed for {changed} cats in the current donation-candidates view")
+            self.statusBar().showMessage(_tr("bulk.status.cleared_must_breed_donation", default="Cleared Must Breed for {count} cats in the current donation-candidates view", count=changed))
         else:
-            state_text = "on" if target_state else "off"
-            self.statusBar().showMessage(f"Turned must breed {state_text} for {changed} cats in the current view")
+            state_text = _tr("common.on", default="on") if target_state else _tr("common.off", default="off")
+            self.statusBar().showMessage(_tr("bulk.status.turned_must_breed", default="Turned must breed {state} for {count} cats in the current view", state=state_text, count=changed))
 
     def _emit_bulk_toggle_refresh(self):
         if self._source_model.rowCount() == 0:
@@ -10695,7 +11613,7 @@ class MainWindow(QMainWindow):
             cat.is_blacklisted = True
             changed += 1
         if changed == 0:
-            self.statusBar().showMessage("No additional cats in view were added to the breeding blacklist")
+            self.statusBar().showMessage(_tr("bulk.status.no_additional_blacklist", default="No additional cats in view were added to the breeding blacklist"))
             return
 
         top_left = self._source_model.index(0, COL_BL)
@@ -10707,7 +11625,7 @@ class MainWindow(QMainWindow):
         )
         self._source_model.blacklistChanged.emit()
         self._update_count()
-        self.statusBar().showMessage(f"Excluded {changed} cats in the current donation-candidates view from breeding")
+        self.statusBar().showMessage(_tr("bulk.status.excluded_donation", default="Excluded {count} cats in the current donation-candidates view from breeding", count=changed))
 
     def _clear_must_breed_filtered_cats(self):
         changed = 0
@@ -10724,7 +11642,7 @@ class MainWindow(QMainWindow):
             cat.must_breed = False
             changed += 1
         if changed == 0:
-            self.statusBar().showMessage("No cats in view had Must Breed set")
+            self.statusBar().showMessage(_tr("bulk.status.no_must_breed_set", default="No cats in view had Must Breed set"))
             return
 
         top_left = self._source_model.index(0, COL_MB)
@@ -10736,7 +11654,7 @@ class MainWindow(QMainWindow):
         )
         self._source_model.blacklistChanged.emit()
         self._update_count()
-        self.statusBar().showMessage(f"Cleared Must Breed for {changed} cats in the current donation-candidates view")
+        self.statusBar().showMessage(_tr("bulk.status.cleared_must_breed_donation", default="Cleared Must Breed for {count} cats in the current donation-candidates view", count=changed))
 
     def _show_table_view(self):
         if hasattr(self, "_tree_view") and self._tree_view is not None:
@@ -11115,7 +12033,13 @@ class MainWindow(QMainWindow):
             self._calibration_view.set_context(self._current_save, self._cats)
         self._update_count()
         self.statusBar().showMessage(
-            f"Calibration applied ({cal_explicit} explicit, {cal_token} token from {cal_rows} rows)"
+            _tr(
+                "status.calibration_applied",
+                default="Calibration applied ({explicit} explicit, {token} token from {rows} rows)",
+                explicit=cal_explicit,
+                token=cal_token,
+                rows=cal_rows,
+            )
         )
 
     # ── Breeding cache ──────────────────────────────────────────────────
@@ -11186,7 +12110,11 @@ class MainWindow(QMainWindow):
                 os.remove(cp)
                 self.statusBar().showMessage(_tr("status.cache_cleared"))
             except OSError as e:
-                self.statusBar().showMessage(f"Could not delete cache: {e}")
+                self.statusBar().showMessage(_tr(
+                    "status.cache_delete_failed",
+                    default="Could not delete cache: {error}",
+                    error=e,
+                ))
         else:
             self.statusBar().showMessage(_tr("status.cache_missing"))
 
@@ -11213,7 +12141,7 @@ class MainWindow(QMainWindow):
         if self._perfect_planner_view is not None:
             self._perfect_planner_view.set_cache(cache)
         self.statusBar().showMessage(
-            self.statusBar().currentMessage() + "  |  Breeding cache ready"
+            self.statusBar().currentMessage() + _tr("status.cache_ready_suffix", default="  |  Breeding cache ready")
         )
 
     # ── Loading ────────────────────────────────────────────────────────────
@@ -11282,13 +12210,32 @@ class MainWindow(QMainWindow):
             self._save_lbl.setText(name)
             self.setWindowTitle(_tr("app.title_with_save", name=name))
 
-            msg = f"Loaded {len(cats)} cats from {name}"
+            msg = _tr(
+                "status.save_loaded",
+                default="Loaded {count} cats from {name}",
+                count=len(cats),
+                name=name,
+            )
             if errors:
-                msg += f"  ({len(errors)} parse errors)"
+                msg += _tr(
+                    "status.save_loaded.parse_errors_suffix",
+                    default="  ({count} parse errors)",
+                    count=len(errors),
+                )
             if applied_overrides:
-                msg += f"  ({applied_overrides}/{override_rows} gender overrides)"
+                msg += _tr(
+                    "status.save_loaded.gender_overrides_suffix",
+                    default="  ({applied}/{rows} gender overrides)",
+                    applied=applied_overrides,
+                    rows=override_rows,
+                )
             if cal_rows:
-                msg += f"  (calibration: {cal_explicit} explicit, {cal_token} token)"
+                msg += _tr(
+                    "status.save_loaded.calibration_suffix",
+                    default="  (calibration: {explicit} explicit, {token} token)",
+                    explicit=cal_explicit,
+                    token=cal_token,
+                )
             self.statusBar().showMessage(msg)
 
             # Start background breeding cache computation
@@ -11299,7 +12246,11 @@ class MainWindow(QMainWindow):
         except Exception as e:
             import traceback
             print(traceback.format_exc())
-            self.statusBar().showMessage(f"Error loading save: {e}")
+            self.statusBar().showMessage(_tr(
+                "status.save_load_failed",
+                default="Error loading save: {error}",
+                error=e,
+            ))
         finally:
             self._save_view_disabled = False
             self._restore_current_view()
@@ -11318,13 +12269,17 @@ class MainWindow(QMainWindow):
         if self._current_save:
             _set_default_save(self._current_save)
             name = os.path.basename(self._current_save)
-            self.statusBar().showMessage(f"Default save set to: {name}")
+            self.statusBar().showMessage(_tr(
+                "status.default_save_set",
+                default="Default save set to: {name}",
+                name=name,
+            ))
             self._update_default_save_menu()
 
     def _clear_default_save(self):
         """Clear the default save setting."""
         _set_default_save(None)
-        self.statusBar().showMessage("Default save cleared")
+        self.statusBar().showMessage(_tr("status.default_save_cleared", default="Default save cleared"))
         self._update_default_save_menu()
 
     def _toggle_lineage(self, checked: bool):
@@ -11436,7 +12391,11 @@ class MainWindow(QMainWindow):
         self._zoom_percent = clamped
         self._apply_zoom()
         self._update_zoom_info_action()
-        self.statusBar().showMessage(f"UI zoom set to {self._zoom_percent}%")
+        self.statusBar().showMessage(_tr(
+            "status.zoom_changed",
+            default="UI zoom set to {percent}%",
+            percent=self._zoom_percent,
+        ))
 
     def _change_zoom(self, direction: int):
         self._set_zoom(self._zoom_percent + (direction * _ZOOM_STEP))
@@ -11454,13 +12413,17 @@ class MainWindow(QMainWindow):
         self._font_size_offset = clamped
         self._apply_zoom()
         self._update_font_size_info_action()
-        label = f"+{clamped}pt" if clamped > 0 else f"{clamped}pt" if clamped < 0 else "default"
-        self.statusBar().showMessage(f"Font size offset: {label}")
+        label = _font_size_offset_label(clamped)
+        self.statusBar().showMessage(_tr(
+            "status.font_size_offset",
+            default="Font size offset: {label}",
+            label=label,
+        ))
 
     def _update_font_size_info_action(self):
         if hasattr(self, "_font_size_info_action"):
             off = self._font_size_offset
-            label = f"+{off}pt" if off > 0 else f"{off}pt" if off < 0 else "default"
+            label = _font_size_offset_label(off)
             self._font_size_info_action.setText(_tr("menu.settings.font_size_info", label=label))
 
     def _apply_zoom(self):
