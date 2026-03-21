@@ -239,6 +239,14 @@ EXCEPTIONAL_SUM_THRESHOLD = 40
 DONATION_SUM_THRESHOLD = 34
 DONATION_MAX_TOP_STAT = 6
 
+# Sexuality thresholds for the raw [0.0, 1.0] float stored at personality_anchor+40.
+# The float encodes same-sex attraction: ~0.0 = straight, ~0.5 = bisexual, ~1.0 = gay.
+# These cutoffs are a best guess derived from one save file (2026-03-21) and may need
+# adjustment if edge cases surface in other saves.
+# Observed distribution: straight cluster 0.00-0.10, bi spread 0.13-0.90, gay cluster 0.90-1.00.
+_SEXUALITY_BI_THRESHOLD  = 0.1   # raw value >= this → at least bi (below = straight)
+_SEXUALITY_GAY_THRESHOLD = 0.9   # raw value >= this → gay
+
 # Full status → abbreviated display in table cell
 STATUS_ABBREV = {
     "In House":  "House",
@@ -1861,7 +1869,12 @@ class Cat:
             return float(v)
 
         self.libido = _read_personality(32)
-        self.inbredness = _read_personality(40)
+        # Offset +40 stores the cat's sexuality as a [0.0, 1.0] float:
+        # ~0.0 = straight, ~0.5 = bisexual, ~1.0 = gay.
+        # This field was previously (incorrectly) labeled inbredness in the parser;
+        # true inbredness is derived from ancestry (COI) and applied in parse_save.
+        _sexuality_raw = _read_personality(40)
+        self.inbredness = _sexuality_raw   # kept for COI override detection; overwritten in parse_save
         self.aggression = _read_personality(64)
 
         # Parsed baseline values (before any manual calibration overrides).
@@ -2013,7 +2026,13 @@ class Cat:
                 pass
 
         self.parsed_age = self.age
-        self.sexuality: str = "straight"  # bi / gay / straight — defaults to straight
+        # Derive sexuality string from the raw float at personality_anchor+40.
+        if _sexuality_raw is None or _sexuality_raw < _SEXUALITY_BI_THRESHOLD:
+            self.sexuality: str = "straight"
+        elif _sexuality_raw >= _SEXUALITY_GAY_THRESHOLD:
+            self.sexuality = "gay"
+        else:
+            self.sexuality = "bi"
 
         # Legacy token fallback is already handled above when sex_code is unavailable.
 
