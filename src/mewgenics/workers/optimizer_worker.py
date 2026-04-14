@@ -46,6 +46,9 @@ class RoomOptimizerWorker(QThread):
         prefer_high_libido = bool(p.get("prefer_high_libido", True))
         maximize_throughput = bool(p.get("maximize_throughput", False))
         ignore_stat_priority = bool(p.get("ignore_stat_priority", False))
+        send_kittens_to_fallback = bool(p.get("send_kittens_to_fallback", False))
+        kitten_age_threshold = int(p.get("kitten_age_threshold", 2) or 2)
+        avoid_trait_loss = bool(p.get("avoid_trait_loss", False))
         sa_temperature = float(p.get("sa_temperature", 8.0) or 8.0)
         sa_neighbors = int(p.get("sa_neighbors", 120) or 120)
         mode_family = bool(p.get("mode_family", False))
@@ -86,6 +89,9 @@ class RoomOptimizerWorker(QThread):
             planner_traits=planner_traits,
             mode_profiles=mode_profiles,
             ignore_stat_priority=ignore_stat_priority,
+            send_kittens_to_fallback=send_kittens_to_fallback,
+            kitten_age_threshold=kitten_age_threshold,
+            avoid_trait_loss=avoid_trait_loss,
         )
 
         optimized = optimize_room_distribution(
@@ -227,5 +233,7 @@ class RoomOptimizerWorker(QThread):
             "sa_temperature": sa_temperature,
             "sa_neighbors": sa_neighbors,
             "use_sa": use_sa,
+            "send_kittens_to_fallback": send_kittens_to_fallback,
+            "avoid_trait_loss": avoid_trait_loss,
         })
         return

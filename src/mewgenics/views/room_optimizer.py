@@ -254,6 +254,8 @@ class RoomOptimizerView(QWidget):
             "room_optimizer.toggle.prefer_high_libido": "Prefer High Libido",
             "room_optimizer.toggle.maximize_throughput": "Maximize Throughput",
             "room_optimizer.toggle.ignore_stat_priority": "Ignore Class Stat Priorities",
+            "room_optimizer.toggle.send_kittens_to_fallback": "Kittens to Fallback",
+            "room_optimizer.toggle.avoid_trait_loss": "Avoid Trait Loss",
             "room_optimizer.toggle.use_sa": "More Depth",
         }
         state = _tr("common.on", default="On") if btn.isChecked() else _tr("common.off", default="Off")
@@ -701,6 +703,58 @@ class RoomOptimizerView(QWidget):
         )
         self._ignore_stat_priority_checkbox.toggled.connect(lambda _: self._save_session_state())
         self._setup_controls_layout.addWidget(self._ignore_stat_priority_checkbox)
+
+        # Kittens can't breed in-game (day 0 / day 1). When enabled, the
+        # optimizer routes them to fallback rooms instead of wasting
+        # breeding-room capacity on them.
+        self._send_kittens_checkbox = QPushButton()
+        self._send_kittens_checkbox.setCheckable(True)
+        self._send_kittens_checkbox.setChecked(_saved_optimizer_flag("send_kittens_to_fallback", False))
+        self._send_kittens_checkbox.setToolTip(
+            _tr(
+                "room_optimizer.tooltip.send_kittens_to_fallback",
+                default="Route kittens (age 0-1) to fallback rooms since they can't breed yet. Eternal-youth cats are unaffected.",
+            )
+        )
+        self._send_kittens_checkbox.setStyleSheet(
+            "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a; "
+            "border-radius:4px; padding:6px 12px; font-size:11px; }"
+            "QPushButton:checked { background:#4a3a1f; color:#f6e2c1; border:1px solid #8a6f3a; }"
+            "QPushButton:hover { background:#252545; color:#ddd; }"
+        )
+        self._bind_persistent_toggle(
+            self._send_kittens_checkbox,
+            "room_optimizer.toggle.send_kittens_to_fallback",
+            "send_kittens_to_fallback",
+        )
+        self._send_kittens_checkbox.toggled.connect(lambda _: self._save_session_state())
+        self._setup_controls_layout.addWidget(self._send_kittens_checkbox)
+
+        # Avoid placing cats carrying desired mutations into high-Evolution
+        # rooms, and cats carrying desired disorders into high-Health rooms —
+        # those room effects can strip the desired traits away.
+        self._avoid_trait_loss_checkbox = QPushButton()
+        self._avoid_trait_loss_checkbox.setCheckable(True)
+        self._avoid_trait_loss_checkbox.setChecked(_saved_optimizer_flag("avoid_trait_loss", False))
+        self._avoid_trait_loss_checkbox.setToolTip(
+            _tr(
+                "room_optimizer.tooltip.avoid_trait_loss",
+                default="Avoid placing cats with desired mutations into high-Evolution rooms, and cats with desired disorders into high-Health rooms (those effects can strip the traits).",
+            )
+        )
+        self._avoid_trait_loss_checkbox.setStyleSheet(
+            "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a; "
+            "border-radius:4px; padding:6px 12px; font-size:11px; }"
+            "QPushButton:checked { background:#4a3a1f; color:#f6e2c1; border:1px solid #8a6f3a; }"
+            "QPushButton:hover { background:#252545; color:#ddd; }"
+        )
+        self._bind_persistent_toggle(
+            self._avoid_trait_loss_checkbox,
+            "room_optimizer.toggle.avoid_trait_loss",
+            "avoid_trait_loss",
+        )
+        self._avoid_trait_loss_checkbox.toggled.connect(lambda _: self._save_session_state())
+        self._setup_controls_layout.addWidget(self._avoid_trait_loss_checkbox)
 
         self._setup_controls_layout.addStretch(1)
 
@@ -1161,6 +1215,8 @@ class RoomOptimizerView(QWidget):
             "prefer_high_libido": bool(self._prefer_high_libido_checkbox.isChecked()),
             "maximize_throughput": bool(self._maximize_throughput_checkbox.isChecked()),
             "ignore_stat_priority": bool(self._ignore_stat_priority_checkbox.isChecked()),
+            "send_kittens_to_fallback": bool(self._send_kittens_checkbox.isChecked()) if hasattr(self, "_send_kittens_checkbox") else False,
+            "avoid_trait_loss": bool(self._avoid_trait_loss_checkbox.isChecked()) if hasattr(self, "_avoid_trait_loss_checkbox") else False,
             "bottom_tab_index": int(self._bottom_tabs.currentIndex()) if hasattr(self, "_bottom_tabs") else 2,
         })
         if use_sa is not None:
@@ -1231,6 +1287,10 @@ class RoomOptimizerView(QWidget):
             self._prefer_high_libido_checkbox.setChecked(bool(state.get("prefer_high_libido", self._prefer_high_libido_checkbox.isChecked())))
             self._maximize_throughput_checkbox.setChecked(bool(state.get("maximize_throughput", self._maximize_throughput_checkbox.isChecked())))
             self._ignore_stat_priority_checkbox.setChecked(bool(state.get("ignore_stat_priority", self._ignore_stat_priority_checkbox.isChecked())))
+            if hasattr(self, "_send_kittens_checkbox"):
+                self._send_kittens_checkbox.setChecked(bool(state.get("send_kittens_to_fallback", self._send_kittens_checkbox.isChecked())))
+            if hasattr(self, "_avoid_trait_loss_checkbox"):
+                self._avoid_trait_loss_checkbox.setChecked(bool(state.get("avoid_trait_loss", self._avoid_trait_loss_checkbox.isChecked())))
             self._deep_optimize_btn.setChecked(bool(state.get("use_sa", False)))
             if hasattr(self, "_bottom_tabs"):
                 tab_index = state.get("bottom_tab_index", self._bottom_tabs.currentIndex())
@@ -1275,6 +1335,10 @@ class RoomOptimizerView(QWidget):
             self._prefer_high_libido_checkbox.setChecked(True)
             self._maximize_throughput_checkbox.setChecked(False)
             self._ignore_stat_priority_checkbox.setChecked(False)
+            if hasattr(self, "_send_kittens_checkbox"):
+                self._send_kittens_checkbox.setChecked(False)
+            if hasattr(self, "_avoid_trait_loss_checkbox"):
+                self._avoid_trait_loss_checkbox.setChecked(False)
             self._deep_optimize_btn.setChecked(False)
             if hasattr(self, "_bottom_tabs"):
                 self._bottom_tabs.setCurrentIndex(3)
@@ -1438,6 +1502,22 @@ class RoomOptimizerView(QWidget):
                     default="Disable class stat prioritization when scoring pairs. Use this when chasing all-7 stat lines.",
                 )
             )
+        if hasattr(self, "_send_kittens_checkbox"):
+            RoomOptimizerView._set_toggle_button_label(self._send_kittens_checkbox, "room_optimizer.toggle.send_kittens_to_fallback")
+            self._send_kittens_checkbox.setToolTip(
+                _tr(
+                    "room_optimizer.tooltip.send_kittens_to_fallback",
+                    default="Route kittens (age 0-1) to fallback rooms since they can't breed yet. Eternal-youth cats are unaffected.",
+                )
+            )
+        if hasattr(self, "_avoid_trait_loss_checkbox"):
+            RoomOptimizerView._set_toggle_button_label(self._avoid_trait_loss_checkbox, "room_optimizer.toggle.avoid_trait_loss")
+            self._avoid_trait_loss_checkbox.setToolTip(
+                _tr(
+                    "room_optimizer.tooltip.avoid_trait_loss",
+                    default="Avoid placing cats with desired mutations into high-Evolution rooms, and cats with desired disorders into high-Health rooms (those effects can strip the traits).",
+                )
+            )
         if hasattr(self, "_shared_search_note"):
             self._shared_search_note.setText(_tr(
                 "menu.settings.optimizer_search_settings.summary",
@@ -1492,6 +1572,8 @@ class RoomOptimizerView(QWidget):
         sa_neighbors = _saved_optimizer_search_neighbors()
         maximize_throughput = bool(self._maximize_throughput_checkbox.isChecked()) if hasattr(self, "_maximize_throughput_checkbox") else False
         ignore_stat_priority = bool(self._ignore_stat_priority_checkbox.isChecked()) if hasattr(self, "_ignore_stat_priority_checkbox") else False
+        send_kittens_to_fallback = bool(self._send_kittens_checkbox.isChecked()) if hasattr(self, "_send_kittens_checkbox") else False
+        avoid_trait_loss = bool(self._avoid_trait_loss_checkbox.isChecked()) if hasattr(self, "_avoid_trait_loss_checkbox") else False
         mode_family = self._mode_toggle_btn.isChecked()
 
         params = {
@@ -1503,6 +1585,8 @@ class RoomOptimizerView(QWidget):
             "prefer_high_libido": self._prefer_high_libido_checkbox.isChecked(),
             "maximize_throughput": maximize_throughput and not mode_family,
             "ignore_stat_priority": ignore_stat_priority,
+            "send_kittens_to_fallback": send_kittens_to_fallback,
+            "avoid_trait_loss": avoid_trait_loss,
             "sa_temperature": sa_temperature,
             "sa_neighbors": sa_neighbors,
             "mode_family": mode_family,

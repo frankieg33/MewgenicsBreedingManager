@@ -1358,10 +1358,13 @@ def test_room_optimizer_remembers_last_session_globally(qt_app, planner_config):
     assert fresh._maximize_throughput_checkbox.isChecked() is True
     assert fresh._bottom_tabs.currentIndex() == 1
 
+    # Room priority config is intentionally NOT mirrored globally (see issue
+    # #68): each save owns its room layout, so a fresh view without a save
+    # path bound should see the built-in defaults, not whatever the previous
+    # save had configured. The session state above (min_stats, toggles, etc.)
+    # is still remembered globally for convenience.
     fresh_slot = fresh._room_priority_panel._slots[0]
-    assert fresh_slot["mode_combo"].currentData() == "fallback"
-    assert fresh_slot["cap_spin"].value() == 3
-    assert fresh_slot["stim_spin"].value() == 88
+    assert fresh_slot["mode_combo"].currentData() != "fallback"
 
 
 def test_room_optimizer_global_state_wins_over_stale_save_state(qt_app, planner_config):

@@ -39,6 +39,8 @@ class RoomConfig:
     room_type: RoomType
     max_cats: int | None
     base_stim: float = 50.0
+    evolution: float = 0.0
+    health: float = 0.0
 
     @property
     def display_name(self) -> str:
@@ -101,6 +103,15 @@ class OptimizationParams:
     # pairs. Useful when the user is chasing all-7s and has no reason to
     # favor particular stats for any class.
     ignore_stat_priority: bool = False
+    # When True, kittens (age < kitten_age_threshold) are routed to fallback
+    # rooms instead of breeding rooms, since they cannot breed in-game.
+    # Eternal youth cats are excluded from this — they are handled separately.
+    send_kittens_to_fallback: bool = False
+    kitten_age_threshold: int = 2  # age < 2 = kitten (day 0 or 1)
+    # When True, the optimizer penalizes placing cats carrying desired mutations
+    # into high-Evolution rooms, and cats carrying desired disorders into
+    # high-Health rooms (both can be stripped away by the room effects).
+    avoid_trait_loss: bool = False
 
 
 @dataclass

@@ -35,6 +35,64 @@ def _has_eternal_youth(cat: Cat) -> bool:
     return any(d.lower() == "eternalyouth" for d in (getattr(cat, "disorders", None) or []))
 
 
+def _is_kitten(cat: Cat, threshold: int) -> bool:
+    """Return True if this cat counts as a kitten (too young to breed).
+
+    Eternal-youth cats are excluded — they're handled separately by the
+    caller so they still land in the best breeding room.
+    """
+    if threshold <= 0:
+        return False
+    age = getattr(cat, "age", None)
+    if age is None:
+        return False
+    try:
+        return int(age) < threshold
+    except (TypeError, ValueError):
+        return False
+
+
+def _trait_loss_penalty(
+    cat: Cat,
+    room: RoomConfig,
+    desired_traits: list[dict] | None,
+) -> float:
+    """Penalty for placing a cat with desired mutations/disorders into a room
+    whose furniture can strip those traits away.
+
+    Evolution rooms can override desired mutations; Health rooms can cure
+    desired disorders. Penalty scales with the trait weight and the room's
+    Evolution/Health total.
+    """
+    if not desired_traits:
+        return 0.0
+    evolution = max(0.0, float(getattr(room, "evolution", 0.0) or 0.0))
+    health = max(0.0, float(getattr(room, "health", 0.0) or 0.0))
+    if evolution <= 0.0 and health <= 0.0:
+        return 0.0
+    cat_mutations = {str(m).strip().lower() for m in (getattr(cat, "mutations", None) or [])}
+    cat_disorders = {str(d).strip().lower() for d in (getattr(cat, "disorders", None) or [])}
+    penalty = 0.0
+    for trait in desired_traits:
+        if not isinstance(trait, dict):
+            continue
+        try:
+            weight = float(trait.get("weight", 0) or 0)
+        except (TypeError, ValueError):
+            weight = 0.0
+        if weight <= 0:
+            continue
+        category = str(trait.get("category") or "").strip().lower()
+        key = str(trait.get("key") or "").strip().lower()
+        if not category or not key:
+            continue
+        if category == "mutation" and evolution > 0.0 and key in cat_mutations:
+            penalty += weight * (evolution / 100.0)
+        elif category == "disorder" and health > 0.0 and key in cat_disorders:
+            penalty += weight * (health / 100.0)
+    return penalty
+
+
 def _filter_cats(cats: list[Cat], excluded_keys: set[int], min_stats: int) -> list[Cat]:
     return [
         c
@@ -84,6 +142,20 @@ def _room_base_stim(entry: dict, room_key: str, room_stats: dict[str, FurnitureR
     return 50.0
 
 
+def _room_effect(
+    room_key: str,
+    room_stats: dict[str, FurnitureRoomSummary] | None,
+    effect_name: str,
+) -> float:
+    summary = (room_stats or {}).get(room_key)
+    if summary is None:
+        return 0.0
+    try:
+        return max(0.0, float(summary.raw_effects.get(effect_name, 0.0) or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def best_breeding_room_stimulation(room_configs: list[RoomConfig], fallback: float = 50.0) -> float:
     """Return the strongest breeding-room stimulation available for generic pair scoring."""
     breeding_stims = [room.base_stim for room in room_configs if room.room_type.uses_profile]
@@ -125,6 +197,8 @@ def build_room_configs(
                     room_type=room_type,
                     max_cats=_coerce_room_capacity(entry.get("max_cats", entry.get("capacity")), room_type=room_type),
                     base_stim=_room_base_stim(entry, key, room_stats),
+                    evolution=_room_effect(key, room_stats, "Evolution"),
+                    health=_room_effect(key, room_stats, "Health"),
                 )
             )
         return out
@@ -142,6 +216,8 @@ def build_room_configs(
                 room_type=room_type,
                 max_cats=_coerce_room_capacity(None, room_type=room_type),
                 base_stim=_room_base_stim({}, room, room_stats),
+                evolution=_room_effect(room, room_stats, "Evolution"),
+                health=_room_effect(room, room_stats, "Health"),
             )
         )
     return out
@@ -511,6 +587,22 @@ def optimize_room_distribution(
         room_assignments[best_ey_room.key].extend(ey_cats)
         assigned_cats.update(c.db_key for c in ey_cats)
 
+    kitten_cats: list[Cat] = []
+    if params.send_kittens_to_fallback and params.kitten_age_threshold > 0:
+        kitten_cats = [c for c in non_ey_cats if _is_kitten(c, params.kitten_age_threshold)]
+        if kitten_cats:
+            kitten_ids = {c.db_key for c in kitten_cats}
+            non_ey_cats = [c for c in non_ey_cats if c.db_key not in kitten_ids]
+            fallback_rooms_for_kittens = (
+                [room.key for room in room_configs if not room.room_type.uses_profile]
+                or (room_order[-1:] if room_order else [])
+            )
+            if fallback_rooms_for_kittens:
+                for i, cat in enumerate(kitten_cats):
+                    target = fallback_rooms_for_kittens[i % len(fallback_rooms_for_kittens)]
+                    room_assignments[target].append(cat)
+                    assigned_cats.add(cat.db_key)
+
     cats_by_id = {c.db_key: c for c in filtered_cats}
     original_state = {c.db_key: (c.room or "") for c in filtered_cats}
     pair_factor_cache: dict[tuple[int, int, float, str], PairFactors] = {}
@@ -574,6 +666,15 @@ def optimize_room_distribution(
             return None
         return sum(pair.quality for pair in selected_pairs), len(selected_pairs)
 
+    def _trait_loss_penalty_for(room: RoomConfig, cats_in_room: list[Cat]) -> float:
+        if not params.avoid_trait_loss:
+            return 0.0
+        profile = _profile_for_room(params, room)
+        desired = profile.get("traits") if room.uses_profile else None
+        if not desired:
+            return 0.0
+        return sum(_trait_loss_penalty(cat, room, desired) for cat in cats_in_room)
+
     def _room_pair_score(room: RoomConfig, cats_in_room: list[Cat], room_stim: float) -> float | tuple[int, float]:
         metrics = _room_pair_metrics(room, cats_in_room, room_stim)
         if metrics is None:
@@ -584,6 +685,7 @@ def optimize_room_distribution(
 
         total_possible_pairs = (len(cats_in_room) * (len(cats_in_room) - 1)) / 2.0
         base_score = sum_quality / total_possible_pairs
+        trait_penalty = _trait_loss_penalty_for(room, cats_in_room)
         if params.maximize_throughput:
             # Throughput mode should prefer the room that produces more valid
             # breeding pairs, even if its average pair quality is a little lower.
@@ -593,13 +695,13 @@ def optimize_room_distribution(
                     valid_pairs,
                     total_possible_pairs,
                     True,
-                ),
+                ) - trait_penalty,
             )
         return base_score + _throughput_density_bonus(
             valid_pairs,
             total_possible_pairs,
             False,
-        )
+        ) - trait_penalty
 
     if params.mode_family:
         room_caps = {room.key: room.max_cats for room in room_configs}
@@ -631,6 +733,26 @@ def optimize_room_distribution(
             if room_key is None:
                 continue
             family_assignments[room_key]["unknown"].append(cat)
+
+        if kitten_cats:
+            # Kittens were pre-assigned to fallback rooms above; mirror those
+            # placements into family_assignments so the rebind on line ~784
+            # doesn't drop them.
+            fallback_rooms_for_kittens = (
+                [room.key for room in room_configs if not room.room_type.uses_profile]
+                or (room_order[-1:] if room_order else [])
+            )
+            for cat in kitten_cats:
+                gender = (getattr(cat, "gender", "") or "").lower()
+                bucket = "males" if gender == "male" else "females" if gender == "female" else "unknown"
+                # Find which fallback room this kitten was assigned to.
+                target = next(
+                    (r for r in fallback_rooms_for_kittens if cat in room_assignments.get(r, [])),
+                    fallback_rooms_for_kittens[0] if fallback_rooms_for_kittens else None,
+                )
+                if target is None:
+                    continue
+                family_assignments[target][bucket].append(cat)
 
         for gender_list, gender_key in (
             ([c for c in non_ey_cats if (c.gender or "").lower() == "male"], "males"),
@@ -759,7 +881,18 @@ def optimize_room_distribution(
                     assigned_cats.update([a.db_key, b.db_key])
                     placed = True
             else:
-                for room in room_configs:
+                # When avoid_trait_loss is on, try rooms whose furniture is
+                # least likely to strip this pair's desired traits first.
+                if params.avoid_trait_loss:
+                    iter_rooms = sorted(
+                        room_configs,
+                        key=lambda r: (
+                            _trait_loss_penalty_for(r, [a, b]) if r.room_type.uses_profile else 0.0,
+                        ),
+                    )
+                else:
+                    iter_rooms = list(room_configs)
+                for room in iter_rooms:
                     if not room.room_type.uses_profile:
                         continue
                     rc = room_assignments[room.key]

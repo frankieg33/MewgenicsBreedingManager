@@ -14,7 +14,7 @@ from mewgenics.utils.cat_analysis import _cat_uid
 
 logger = logging.getLogger("mewgenics.planner_state")
 
-_PLANNER_STATE_GLOBAL_MIRROR_KEYS = {"room_optimizer_state", "room_priority_config"}
+_PLANNER_STATE_GLOBAL_MIRROR_KEYS = {"room_optimizer_state"}
 
 MUTATION_CLASS_MODES = ("best_pairs", "melee", "ranged", "magic")
 ROOM_OPTIMIZER_MODES = MUTATION_CLASS_MODES + ("fallback",)

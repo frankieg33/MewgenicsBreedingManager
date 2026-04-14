@@ -31,6 +31,8 @@ def _make_cat(
     parent_b=None,
     must_breed: bool = False,
     disorders=None,
+    mutations=None,
+    age: int | None = None,
     aggression: float = 0.3,
     libido: float = 0.7,
     stat_seed: int = 5,
@@ -45,10 +47,12 @@ def _make_cat(
         room=room,
         room_display=room,
         generation=generation,
+        age=age,
         parent_a=parent_a,
         parent_b=parent_b,
         must_breed=must_breed,
         disorders=list(disorders or []),
+        mutations=list(mutations or []),
         aggression=aggression,
         libido=libido,
         base_stats={stat: stat_seed for stat in STAT_NAMES},
@@ -469,3 +473,229 @@ def test_greedy_fallback_produces_reasonable_pairs():
     assert result.stats.total_pairs >= 10, (
         f"Expected at least 10 pairs from 28 bi cats, got {result.stats.total_pairs}"
     )
+
+
+# ── Issue 70: Kittens routed to fallback rooms ────────────────────────────
+
+def test_send_kittens_to_fallback_routes_young_cats():
+    """Kittens (age < threshold) should be placed in fallback rooms, not
+    breeding rooms, when send_kittens_to_fallback is enabled."""
+    adult_a = _make_cat(1, gender="male", sexuality="bi", stat_seed=7, age=5)
+    adult_b = _make_cat(2, gender="female", sexuality="bi", stat_seed=7, age=5)
+    kitten = _make_cat(3, gender="male", sexuality="bi", stat_seed=7, age=0)
+
+    room_configs = [
+        RoomConfig("Floor1_Large", RoomType.BREEDING, 6, 50.0),
+        RoomConfig("Attic", RoomType.FALLBACK, None, 50.0),
+    ]
+    result = optimize_room_distribution(
+        [adult_a, adult_b, kitten],
+        room_configs,
+        OptimizationParams(
+            max_risk=10.0,
+            avoid_lovers=False,
+            send_kittens_to_fallback=True,
+            kitten_age_threshold=2,
+        ),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    assert _room_for_cat(result, 3) == "Attic"
+    # Adults are still paired up in the breeding room.
+    assert _room_for_cat(result, 1) == "Floor1_Large"
+    assert _room_for_cat(result, 2) == "Floor1_Large"
+
+
+def test_send_kittens_to_fallback_disabled_leaves_kittens_in_breeding():
+    """When the toggle is off, kittens are treated like any other cat and
+    may land in breeding rooms (legacy behavior)."""
+    kitten_a = _make_cat(1, gender="male", sexuality="bi", stat_seed=7, age=0)
+    kitten_b = _make_cat(2, gender="female", sexuality="bi", stat_seed=7, age=0)
+
+    room_configs = [
+        RoomConfig("Floor1_Large", RoomType.BREEDING, 6, 50.0),
+        RoomConfig("Attic", RoomType.FALLBACK, None, 50.0),
+    ]
+    result = optimize_room_distribution(
+        [kitten_a, kitten_b],
+        room_configs,
+        OptimizationParams(max_risk=10.0, avoid_lovers=False),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    assert _room_for_cat(result, 1) == "Floor1_Large"
+    assert _room_for_cat(result, 2) == "Floor1_Large"
+
+
+def test_send_kittens_to_fallback_skips_eternal_youth():
+    """Eternal-youth cats must NOT be treated as kittens — the existing EY
+    branch places them in the best breeding room."""
+    ey_cat = _make_cat(1, gender="male", sexuality="bi", stat_seed=7, age=0, disorders=["EternalYouth"])
+    adult = _make_cat(2, gender="female", sexuality="bi", stat_seed=7, age=5)
+
+    room_configs = [
+        RoomConfig("Floor1_Large", RoomType.BREEDING, 6, 50.0),
+        RoomConfig("Attic", RoomType.FALLBACK, None, 50.0),
+    ]
+    result = optimize_room_distribution(
+        [ey_cat, adult],
+        room_configs,
+        OptimizationParams(
+            max_risk=10.0,
+            avoid_lovers=False,
+            send_kittens_to_fallback=True,
+            kitten_age_threshold=2,
+        ),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    assert _room_for_cat(result, 1) == "Floor1_Large"
+
+
+def test_send_kittens_to_fallback_works_in_family_mode():
+    """Kitten routing must survive the family-mode rebind step."""
+    dad = _make_cat(1, gender="male", sexuality="bi", age=5)
+    mom = _make_cat(2, gender="female", sexuality="bi", age=5)
+    kitten = _make_cat(3, gender="male", sexuality="bi", age=0, parent_a=dad, parent_b=mom, generation=1)
+
+    room_configs = [
+        RoomConfig("Floor1_Large", RoomType.BREEDING, 6, 50.0),
+        RoomConfig("Attic", RoomType.FALLBACK, None, 50.0),
+    ]
+    result = optimize_room_distribution(
+        [dad, mom, kitten],
+        room_configs,
+        OptimizationParams(
+            mode_family=True,
+            avoid_lovers=False,
+            send_kittens_to_fallback=True,
+            kitten_age_threshold=2,
+        ),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    assert _room_for_cat(result, 3) == "Attic"
+
+
+# ── Issue 71: Trait-loss avoidance (Evolution/Health room awareness) ──────
+
+def test_avoid_trait_loss_steers_desired_mutation_away_from_evolution_room():
+    """A cat with a desired mutation should prefer a low-Evolution room
+    when avoid_trait_loss is enabled."""
+    cat_a = _make_cat(1, gender="male", sexuality="bi", stat_seed=7, age=5, mutations=["extra_whiskers"])
+    cat_b = _make_cat(2, gender="female", sexuality="bi", stat_seed=7, age=5)
+
+    high_evo = RoomConfig("Floor1_Large", RoomType.BEST_PAIRS, 6, 50.0, evolution=80.0)
+    low_evo = RoomConfig("Floor1_Small", RoomType.BEST_PAIRS, 6, 50.0, evolution=0.0)
+    fallback = RoomConfig("Attic", RoomType.FALLBACK, None, 50.0)
+
+    profiles = {
+        "best_pairs": {
+            "traits": [{"category": "mutation", "key": "extra_whiskers", "weight": 10, "display": "Extra Whiskers"}],
+            "stat_priority": list(STAT_NAMES),
+        },
+    }
+
+    result = optimize_room_distribution(
+        [cat_a, cat_b],
+        [high_evo, low_evo, fallback],
+        OptimizationParams(
+            max_risk=10.0,
+            avoid_lovers=False,
+            avoid_trait_loss=True,
+            mode_profiles=profiles,
+        ),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    # Both cats should land in the low-evolution room; the penalty on the
+    # high-evolution room should push the greedy search to pick the other.
+    assert _room_for_cat(result, 1) == "Floor1_Small"
+    assert _room_for_cat(result, 2) == "Floor1_Small"
+
+
+def test_avoid_trait_loss_disabled_permits_high_evolution_placement():
+    """Without the toggle, a cat carrying a desired mutation is not steered
+    away from a high-Evolution room."""
+    cat_a = _make_cat(1, gender="male", sexuality="bi", stat_seed=7, age=5, mutations=["extra_whiskers"])
+    cat_b = _make_cat(2, gender="female", sexuality="bi", stat_seed=7, age=5)
+
+    high_evo = RoomConfig("Floor1_Large", RoomType.BEST_PAIRS, 6, 50.0, evolution=80.0)
+    low_evo = RoomConfig("Floor1_Small", RoomType.BEST_PAIRS, 6, 50.0, evolution=0.0)
+    fallback = RoomConfig("Attic", RoomType.FALLBACK, None, 50.0)
+
+    profiles = {
+        "best_pairs": {
+            "traits": [{"category": "mutation", "key": "extra_whiskers", "weight": 10}],
+            "stat_priority": list(STAT_NAMES),
+        },
+    }
+
+    result = optimize_room_distribution(
+        [cat_a, cat_b],
+        [high_evo, low_evo, fallback],
+        OptimizationParams(
+            max_risk=10.0,
+            avoid_lovers=False,
+            avoid_trait_loss=False,
+            mode_profiles=profiles,
+        ),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    # First-fit greedy without the penalty would drop them in the first
+    # breeding room in the list.
+    assert _room_for_cat(result, 1) == "Floor1_Large"
+
+
+def test_avoid_trait_loss_steers_desired_disorder_away_from_health_room():
+    """A cat with a desired disorder should prefer a low-Health room when
+    avoid_trait_loss is enabled (Health rooms cure disorders)."""
+    cat_a = _make_cat(1, gender="male", sexuality="bi", stat_seed=7, age=5, disorders=["nearsighted"])
+    cat_b = _make_cat(2, gender="female", sexuality="bi", stat_seed=7, age=5)
+
+    high_health = RoomConfig("Floor1_Large", RoomType.BEST_PAIRS, 6, 50.0, health=80.0)
+    low_health = RoomConfig("Floor1_Small", RoomType.BEST_PAIRS, 6, 50.0, health=0.0)
+    fallback = RoomConfig("Attic", RoomType.FALLBACK, None, 50.0)
+
+    profiles = {
+        "best_pairs": {
+            "traits": [{"category": "disorder", "key": "nearsighted", "weight": 10}],
+            "stat_priority": list(STAT_NAMES),
+        },
+    }
+
+    result = optimize_room_distribution(
+        [cat_a, cat_b],
+        [high_health, low_health, fallback],
+        OptimizationParams(
+            max_risk=10.0,
+            avoid_lovers=False,
+            avoid_trait_loss=True,
+            mode_profiles=profiles,
+        ),
+        cache=None,
+        excluded_keys=set(),
+    )
+
+    assert _room_for_cat(result, 1) == "Floor1_Small"
+
+
+def test_build_room_configs_extracts_evolution_and_health():
+    """RoomConfig should pick up Evolution and Health from room_stats."""
+    room_stats = {
+        "Floor1_Large": SimpleNamespace(raw_effects={"Evolution": 42.0, "Health": 17.5}),
+    }
+    configs = build_room_configs(
+        [{"room": "Floor1_Large", "type": "breeding", "max_cats": 6}],
+        available_rooms=["Floor1_Large"],
+        room_stats=room_stats,
+    )
+    assert configs[0].evolution == 42.0
+    assert configs[0].health == 17.5

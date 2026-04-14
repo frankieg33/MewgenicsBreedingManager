@@ -76,6 +76,48 @@ class TestCrossPlannerIsolation:
         ) == {"k": "p"}
 
 
+class TestRoomPriorityConfigIsPerSave:
+    """Regression guard for issue 68: room priority config used to bleed
+    between saves because it was globally mirrored. It must now live only
+    in the per-save sidecar."""
+
+    def test_room_priority_config_is_not_globally_mirrored(self):
+        assert "room_priority_config" not in ps._PLANNER_STATE_GLOBAL_MIRROR_KEYS
+
+    def test_per_save_config_does_not_leak_to_other_save(self, tmp_path):
+        save_a = str(tmp_path / "a.sav")
+        save_b = str(tmp_path / "b.sav")
+
+        config_a = [{"room": "Floor1_Large", "type": "best_pairs", "max_cats": 4}]
+        config_b = [{"room": "Floor1_Large", "type": "fallback", "max_cats": 12}]
+
+        ps._save_planner_state_value("room_priority_config", config_a, save_a)
+        ps._save_planner_state_value("room_priority_config", config_b, save_b)
+
+        assert ps._load_planner_state_value("room_priority_config", [], save_a) == config_a
+        assert ps._load_planner_state_value("room_priority_config", [], save_b) == config_b
+
+    def test_room_priority_config_save_does_not_touch_global_config(self, save_path, monkeypatch):
+        """Saving a room_priority_config must only write the sidecar,
+        not the global app config (which would leak to other saves)."""
+        writes: list[dict] = []
+
+        def fake_save_app_config(data):
+            writes.append(dict(data))
+
+        monkeypatch.setattr(ps, "_save_app_config", fake_save_app_config)
+
+        ps._save_planner_state_value(
+            "room_priority_config",
+            [{"room": "Floor1_Large", "type": "best_pairs"}],
+            save_path,
+        )
+        assert writes == [], (
+            "room_priority_config should not touch the global app config — "
+            "otherwise it will leak between saves"
+        )
+
+
 class TestCorruptedFileHandling:
     def test_save_refuses_to_clobber_unreadable_file(self, save_path, caplog):
         """If the existing file cannot be parsed, saving must bail out
