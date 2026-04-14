@@ -699,3 +699,27 @@ def test_build_room_configs_extracts_evolution_and_health():
     )
     assert configs[0].evolution == 42.0
     assert configs[0].health == 17.5
+
+
+def test_trait_loss_penalty_matches_mutation_with_id_suffix():
+    """Mutation planner stores trait keys as ``"<name>|<mutation_id>"`` but
+    `cat.mutations` only carries the display name. The penalty must compare by
+    the name portion on both sides so a desired mutation from the planner
+    actually triggers the penalty."""
+    cat = _make_cat(1, gender="male", sexuality="bi", age=5, mutations=["FluffyTail"])
+    high_evo = RoomConfig("Floor1_Large", RoomType.BEST_PAIRS, 6, 50.0, evolution=80.0)
+
+    # Trait stored with the mutation chip ID suffix (real planner format).
+    desired = [{"category": "mutation", "key": "FluffyTail|42", "weight": 10}]
+    penalty = room_optimizer_impl._trait_loss_penalty(cat, high_evo, desired)
+    assert penalty > 0.0
+
+    # Reverse case: cat carries the suffixed form, planner uses the bare name.
+    cat_suffixed = _make_cat(2, gender="male", sexuality="bi", age=5, mutations=["FluffyTail|42"])
+    desired_bare = [{"category": "mutation", "key": "FluffyTail", "weight": 10}]
+    penalty_reverse = room_optimizer_impl._trait_loss_penalty(cat_suffixed, high_evo, desired_bare)
+    assert penalty_reverse > 0.0
+
+    # Sanity: mismatched name still produces no penalty.
+    desired_other = [{"category": "mutation", "key": "ExtraEars|7", "weight": 10}]
+    assert room_optimizer_impl._trait_loss_penalty(cat, high_evo, desired_other) == 0.0

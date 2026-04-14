@@ -2,7 +2,7 @@
 
 A high-performance, Python-based tool for optimizing breeding operations in Mewgenics. It extracts data directly from your save files and helps you compare pairings, optimize room layouts, and plan long-term lines to maximize strong offspring while minimizing inbreeding risk.
 
-Current release: `v5.4.7`
+Current release: `v5.4.8`
 
 If you'd like to support the project, you can [here](https://ko-fi.com/frankieg33).
 
@@ -66,6 +66,12 @@ On Linux, use `build.sh`.
 - Original idea and reference from frankieg33
 
 ## Release Notes
+
+### v5.4.8
+
+- Fixed Configure Rooms layout (capacity, room type, stimulation) bleeding between save files — `room_priority_config` now lives only in the per-save sidecar instead of being mirrored to the global app config (issue #68)
+- Room Optimizer can now route kittens (age < 2) into fallback rooms instead of wasting breeding-room capacity on cats that can't breed yet. Eternal-youth cats are still placed in the best breeding room (issue #70)
+- Room Optimizer can now avoid placing cats with desired mutations into high-Evolution rooms, and cats with desired disorders into high-Health rooms (which would otherwise override or cure those traits). Opt in via the new "Avoid Trait Loss" toggle (issue #71)
 
 ### v5.4.7
 

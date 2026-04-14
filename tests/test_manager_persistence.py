@@ -331,6 +331,97 @@ def test_room_optimizer_worker_keeps_family_mode_sa_enabled(monkeypatch):
     assert captured["use_sa"] is True
 
 
+def test_room_optimizer_worker_preserves_explicit_zero_kitten_threshold(monkeypatch):
+    """An explicit ``kitten_age_threshold=0`` must pass through to the
+    optimizer unchanged (optimizer treats ``<= 0`` as disabled). A previous
+    ``int(... or 2)`` idiom silently rewrote 0 to 2, making it impossible to
+    disable kitten routing via the threshold."""
+    captured: dict[str, int | bool] = {}
+
+    cats = [
+        SimpleNamespace(
+            db_key=1,
+            name="Alpha",
+            gender_display="M",
+            status="In House",
+            room="Floor1_Large",
+            room_display=mm.ROOM_DISPLAY["Floor1_Large"],
+            lovers=[],
+            haters=[],
+            base_stats={stat: 4 for stat in mm.STAT_NAMES},
+            age=1.0,
+            aggression=0.2,
+            libido=0.3,
+            inbredness=0.1,
+        ),
+        SimpleNamespace(
+            db_key=2,
+            name="Bravo",
+            gender_display="F",
+            status="In House",
+            room="Floor1_Large",
+            room_display=mm.ROOM_DISPLAY["Floor1_Large"],
+            lovers=[],
+            haters=[],
+            base_stats={stat: 4 for stat in mm.STAT_NAMES},
+            age=1.0,
+            aggression=0.2,
+            libido=0.3,
+            inbredness=0.1,
+        ),
+    ]
+
+    def _fake_optimize_room_distribution(_cats, room_configs, params, **_kwargs):
+        captured["kitten_age_threshold"] = params.kitten_age_threshold
+        captured["send_kittens_to_fallback"] = params.send_kittens_to_fallback
+        return OptimizationResult(
+            rooms=[
+                RoomAssignment(
+                    room=room_configs[0],
+                    cats=[],
+                    pairs=[],
+                )
+            ],
+            excluded_cats=[],
+            stats=OptimizationStats(
+                total_cats=2,
+                assigned_cats=0,
+                total_pairs=0,
+                breeding_rooms_used=0,
+                general_rooms_used=0,
+                avg_pair_quality=0.0,
+                avg_risk_percent=0.0,
+            ),
+        )
+
+    monkeypatch.setattr(
+        optimizer_worker_module, "optimize_room_distribution", _fake_optimize_room_distribution
+    )
+
+    worker = RoomOptimizerWorker(
+        cats,
+        excluded_keys=set(),
+        cache=None,
+        params={
+            "min_stats": 0,
+            "max_risk": 10.0,
+            "send_kittens_to_fallback": True,
+            "kitten_age_threshold": 0,
+            "available_rooms": ["Floor1_Large", "Attic"],
+            "room_config": [
+                {"room": "Floor1_Large", "type": "breeding", "max_cats": 6, "base_stim": 50.0},
+                {"room": "Attic", "type": "fallback", "max_cats": 0, "base_stim": 50.0},
+            ],
+            "room_stats": {},
+        },
+    )
+
+    worker.run()
+
+    assert captured["kitten_age_threshold"] == 0
+    assert captured["send_kittens_to_fallback"] is True
+
+
 def test_breeding_cache_uses_pedigree_coi_memo_when_risk_missing():
     cache = BreedingCache()
     cache.ready = True

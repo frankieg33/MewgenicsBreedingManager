@@ -47,7 +47,15 @@ class RoomOptimizerWorker(QThread):
         maximize_throughput = bool(p.get("maximize_throughput", False))
         ignore_stat_priority = bool(p.get("ignore_stat_priority", False))
         send_kittens_to_fallback = bool(p.get("send_kittens_to_fallback", False))
-        kitten_age_threshold = int(p.get("kitten_age_threshold", 2) or 2)
+        # Use a two-step default instead of `... or 2`: an explicit numeric 0
+        # must pass through so callers can disable kitten routing via
+        # threshold (optimizer logic treats `<= 0` as disabled). Only fall
+        # back to 2 when the key is missing or the value can't be coerced.
+        _raw_kitten_threshold = p.get("kitten_age_threshold", 2)
+        try:
+            kitten_age_threshold = int(_raw_kitten_threshold) if _raw_kitten_threshold is not None else 2
+        except (TypeError, ValueError):
+            kitten_age_threshold = 2
         avoid_trait_loss = bool(p.get("avoid_trait_loss", False))
         sa_temperature = float(p.get("sa_temperature", 8.0) or 8.0)
         sa_neighbors = int(p.get("sa_neighbors", 120) or 120)

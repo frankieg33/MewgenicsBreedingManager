@@ -808,9 +808,9 @@ class WhatsNewDialog(QDialog):
         )
 
         default_highlights = highlights or [
-            "Fixed Room Optimizer hanging or taking 30+ minutes for large rosters (58-96+ cats) — bitmask DP capped at 24 cats with greedy fallback, fallback rooms skip unnecessary pair computation, and shared kinship memo eliminates redundant pedigree traversals (issues #63, #64).",
-            "Optimizer auto-calculation now waits for the breeding cache before starting, avoiding expensive uncached risk computations on every tab restore.",
-            "Fixed Mutation Planner trait selections reverting when switching tabs (issue #62).",
+            "Fixed Configure Rooms layout (capacity, room type, stimulation) bleeding between save files — room priority config now lives only in the per-save sidecar instead of being mirrored globally (issue #68).",
+            "Room Optimizer can now route kittens (age < 2) into fallback rooms instead of wasting breeding-room capacity on cats that can't breed yet. Eternal-youth cats are still placed in the best breeding room (issue #70).",
+            "Room Optimizer can now avoid placing cats with desired mutations into high-Evolution rooms, and cats with desired disorders into high-Health rooms (which would otherwise override or cure those traits). Opt in via the new Avoid Trait Loss toggle (issue #71).",
         ]
 
         root = QVBoxLayout(self)
@@ -827,7 +827,7 @@ class WhatsNewDialog(QDialog):
         body.setHtml(
             f"""
             <div style="line-height:1.5;">
-              <p>This release fixes Room Optimizer performance for large rosters and prevents Mutation Planner traits from reverting on tab switch.</p>
+              <p>This release fixes Configure Rooms settings bleeding between save files and adds two opt-in Room Optimizer improvements: kitten routing to fallback rooms and trait-loss avoidance for desired mutations/disorders.</p>
               <ul>{bullets}</ul>
               <p><a href="https://github.com/frankieg33/MewgenicsBreedingManager/releases">View releases on GitHub</a></p>
             </div>
