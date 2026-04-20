@@ -8,21 +8,23 @@ _MUT_STAT_RE = re.compile(r'([+-]?\d+)\s+(STR|CON|INT|DEX|SPD|LCK|CHA)')
 def get_mutation_stat_bonuses(cat) -> dict[str, int]:
     """Return {stat_name: total_delta} from visual mutation detail fields.
 
-    Each unique mutation_id is counted only once — the game applies a
-    mutation's stat bonus once regardless of how many body-part slots
-    share the same ID (e.g. the same eyebrow mutation on left and right
-    eyebrow counts once).
+    Each unique (group_key, mutation_id) pair is counted only once — paired
+    body-part slots (e.g. arm_L/arm_R) that share the same mutation within
+    the same group represent a single mutation and collapse to one bonus.
+    Mutation IDs are reused across groups, so keying on mutation_id alone
+    would silently drop legitimately-distinct mutations.
     """
     bonuses: dict[str, int] = {}
-    seen_ids: set = set()
+    seen: set[tuple[str, int]] = set()
     for entry in getattr(cat, 'visual_mutation_entries', []) or []:
         mutation_id = entry.get('mutation_id')
-        # Only dedupe entries that actually carry a mutation_id.  Entries
+        # Only dedupe entries that actually carry a mutation_id. Entries
         # without one (e.g. test fixtures) are treated as distinct.
         if mutation_id is not None:
-            if mutation_id in seen_ids:
+            key = (str(entry.get('group_key') or ''), int(mutation_id))
+            if key in seen:
                 continue
-            seen_ids.add(mutation_id)
+            seen.add(key)
         detail = entry.get('detail', '') or ''
         for match in _MUT_STAT_RE.finditer(detail):
             delta = int(match.group(1))
