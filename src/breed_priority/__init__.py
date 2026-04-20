@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
     QListWidget, QListWidgetItem, QButtonGroup,
     QCheckBox, QComboBox, QLineEdit, QPushButton, QGridLayout, QTabWidget,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QColor, QBrush
 
 # ── Re-exports for external consumers ────────────────────────────────────────
@@ -127,6 +127,81 @@ def _cat_injuries(cat, stat_names: list) -> list:
     return injuries
 
 
+# ── Background scoring worker ────────────────────────────────────────────────
+
+class _BreedPriorityScoringWorker(QThread):
+    """Runs the heavy score-computation phase off the main thread.
+
+    Operates on pure-Python inputs (Cat objects, dicts).  Emits a payload
+    dict that the main thread uses to render rows.
+    """
+    finished_with_data = Signal(object)
+
+    def __init__(self, *, alive, all_cats, scope_cats, scope_set,
+                 ma_ratings, stat_names, weights, display_name_fn,
+                 use_current_stats, add_mutation_stats, run_revision):
+        super().__init__()
+        self._alive = alive
+        self._all_cats = all_cats
+        self._scope_cats = scope_cats
+        self._scope_set = scope_set
+        self._ma_ratings = dict(ma_ratings)
+        self._stat_names = list(stat_names)
+        self._weights = dict(weights)
+        self._display_name_fn = display_name_fn
+        self._use_current_stats = use_current_stats
+        self._add_mutation_stats = add_mutation_stats
+        self._run_revision = run_revision
+
+    def run(self):
+        try:
+            if self.isInterruptionRequested():
+                self.finished_with_data.emit({"status": "canceled",
+                                              "run_revision": self._run_revision})
+                return
+            seven_sets, scope_7_sets = compute_seven_sets(
+                self._alive, self._scope_set,
+                use_current_stats=self._use_current_stats,
+                add_mutation_stats=self._add_mutation_stats,
+            )
+            if self.isInterruptionRequested():
+                self.finished_with_data.emit({"status": "canceled",
+                                              "run_revision": self._run_revision})
+                return
+            hated_by_map, loved_by_map = build_relationship_maps(self._all_cats)
+            if self.isInterruptionRequested():
+                self.finished_with_data.emit({"status": "canceled",
+                                              "run_revision": self._run_revision})
+                return
+
+            _gene_risk_memo: dict = {}
+            scores_tuple = compute_all_scores(
+                self._alive, self._scope_cats, self._scope_set,
+                seven_sets, scope_7_sets, hated_by_map,
+                self._ma_ratings, self._stat_names, self._weights,
+                self._display_name_fn,
+                gene_risk_lookup=lambda a, b, _m=_gene_risk_memo: risk_percent(a, b, _m),
+                use_current_stats=self._use_current_stats,
+                add_mutation_stats=self._add_mutation_stats,
+            )
+            self.finished_with_data.emit({
+                "status": "ok",
+                "run_revision": self._run_revision,
+                "alive": self._alive,
+                "scope_cats": self._scope_cats,
+                "scope_set": self._scope_set,
+                "seven_sets": seven_sets,
+                "scope_7_sets": scope_7_sets,
+                "hated_by_map": hated_by_map,
+                "loved_by_map": loved_by_map,
+                "scores": scores_tuple,
+            })
+        except Exception as exc:  # pragma: no cover - diagnostic
+            self.finished_with_data.emit({"status": "error",
+                                          "run_revision": self._run_revision,
+                                          "error": repr(exc)})
+
+
 # ── Main view ─────────────────────────────────────────────────────────────────
 
 class BreedPriorityView(QWidget):
@@ -190,6 +265,10 @@ class BreedPriorityView(QWidget):
         self._deck_save_puller = None
         self._complex_weights: list = []   # List[ComplexWeight]
         self._cw_dialog: ComplexWeightsDialog | None = None
+        # Background scoring worker state
+        self._scoring_worker: _BreedPriorityScoringWorker | None = None
+        self._scoring_revision: int = 0
+        self._scoring_stale: bool = False  # recompute requested while hidden
         self._load_ratings()
         self._build_ui()
         self.setStyleSheet(
@@ -424,6 +503,18 @@ class BreedPriorityView(QWidget):
         if hasattr(self, "_col_save_timer"):
             self._col_save_timer.stop()
         self._save_ratings()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # If a recompute was deferred because the view was hidden, run it now.
+        if self._scoring_stale and self._cats:
+            self._scoring_stale = False
+            self.recompute()
+
+    def closeEvent(self, event):
+        # Cancel any in-flight worker so it doesn't touch a dying widget.
+        self._cancel_scoring_worker()
+        super().closeEvent(event)
 
     # ── Profile management ─────────────────────────────────────────────────────
 
@@ -2187,6 +2278,12 @@ class BreedPriorityView(QWidget):
     def recompute(self, *_):
         if self._populating:
             return
+        # Defer until the view is actually visible — avoids burning CPU
+        # re-scoring every time cats change while the user is on another tab.
+        if not self.isVisible():
+            self._scoring_stale = True
+            return
+        self._scoring_stale = False
         _restore_name = self._selected_cat.name if self._selected_cat else None
 
         scope_cats = self._get_scope_cats()
@@ -2202,26 +2299,81 @@ class BreedPriorityView(QWidget):
 
         scope_set = {id(c) for c in scope_cats}
 
-        # Pre-compute relationship maps, 7-sets, and scores
-        _seven_sets, _scope_7_sets = compute_seven_sets(alive, scope_set,
-                                                         use_current_stats=self._use_current_stats,
-                                                         add_mutation_stats=self._add_mutation_stats)
+        # ── Dispatch the heavy score computation to a background thread ──
+        # Retire any previous worker so only the most recent request wins.
+        self._scoring_revision += 1
+        self._cancel_scoring_worker()
 
-        _hated_by_map, _loved_by_map = build_relationship_maps(self._cats)
+        worker = _BreedPriorityScoringWorker(
+            alive=alive,
+            all_cats=self._cats,
+            scope_cats=scope_cats,
+            scope_set=scope_set,
+            ma_ratings=self._ma_ratings,
+            stat_names=self._stat_names,
+            weights=self._weights,
+            display_name_fn=self._display_name,
+            use_current_stats=self._use_current_stats,
+            add_mutation_stats=self._add_mutation_stats,
+            run_revision=self._scoring_revision,
+        )
+        # Stash the main-thread state needed to render when the worker returns.
+        worker._render_ctx = {
+            "restore_name": _restore_name,
+            "no_scope": _no_scope,
+        }
+        worker.finished_with_data.connect(self._on_scoring_finished)
+        self._scoring_worker = worker
+        worker.start()
+
+    def _cancel_scoring_worker(self):
+        """Interrupt and detach the current worker so stale results are ignored."""
+        w = self._scoring_worker
+        if w is None:
+            return
+        w.requestInterruption()
+        try:
+            w.finished_with_data.disconnect(self._on_scoring_finished)
+        except (TypeError, RuntimeError):
+            pass  # already disconnected or C++ object gone
+        w.finished_with_data.connect(w.deleteLater)
+        self._scoring_worker = None
+
+    def _on_scoring_finished(self, payload):
+        """Render table rows from a completed scoring run (main-thread slot)."""
+        worker = self.sender()
+        # Only accept the freshest completed run.
+        if not isinstance(payload, dict):
+            return
+        if payload.get("run_revision") != self._scoring_revision:
+            # Stale worker — clean up and ignore.
+            if worker is not None:
+                worker.deleteLater()
+            return
+        if worker is self._scoring_worker:
+            self._scoring_worker = None
+        if worker is not None:
+            worker.deleteLater()
+        if payload.get("status") != "ok":
+            return
+
+        ctx = getattr(worker, "_render_ctx", {}) if worker is not None else {}
+        _restore_name = ctx.get("restore_name")
+        _no_scope = ctx.get("no_scope", False)
+
+        alive = payload["alive"]
+        scope_cats = payload["scope_cats"]
+        scope_set = payload["scope_set"]
+        _seven_sets = payload["seven_sets"]
+        _scope_7_sets = payload["scope_7_sets"]  # noqa: F841 (kept for future use)
+        _hated_by_map = payload["hated_by_map"]
+        _loved_by_map = payload["loved_by_map"]
         self._hated_by_map = _hated_by_map
         self._loved_by_map = _loved_by_map
 
-        _gene_risk_memo: dict = {}
         (results, _cat_sub_counts, _all_scores_sorted,
          _all_scope_gene_risks, _all_scope_children, _max_7_count,
-         _scope_stat_sums, _pair_risk_cache) = compute_all_scores(
-            alive, scope_cats, scope_set,
-            _seven_sets, _scope_7_sets, _hated_by_map,
-            self._ma_ratings, self._stat_names, self._weights, self._display_name,
-            gene_risk_lookup=lambda a, b, _m=_gene_risk_memo: risk_percent(a, b, _m),
-            use_current_stats=self._use_current_stats,
-            add_mutation_stats=self._add_mutation_stats,
-        )
+         _scope_stat_sums, _pair_risk_cache) = payload["scores"]
         self._scope_pair_risks = _pair_risk_cache
         _max_scope_gene_risk = max(_all_scope_gene_risks, default=0.0)
 
