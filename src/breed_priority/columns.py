@@ -32,7 +32,7 @@ _ALL_HEADERS      = (
 )
 _SEP_COLS         = frozenset({COL_SEP1})
 _SEP_WIDTH        = 8
-_COL_MIN_WIDTH    = 20   # ~2 text chars or 1 emoji at table font size
+_COL_MIN_WIDTH    = 8    # narrow enough to collapse columns to a sliver
 _SEP_MIN_WIDTH    = _COL_MIN_WIDTH
 
 # ── Dynamic CW section (appended after static columns) ───────────────────────
