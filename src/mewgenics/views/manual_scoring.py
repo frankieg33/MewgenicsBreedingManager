@@ -584,7 +584,7 @@ class ManualScoringView(QWidget):
         vb.setContentsMargins(12, 12, 12, 12)
         vb.setSpacing(10)
 
-        title = QLabel("Manual Scoring")
+        title = QLabel("Simple Scoring")
         title.setStyleSheet("color:#f0f0ff; font-size:16px; font-weight:bold;")
         vb.addWidget(title)
 

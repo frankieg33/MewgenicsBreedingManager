@@ -998,15 +998,15 @@ class MainWindow(QMainWindow):
         self._room_btns["__fight_club__"] = self._btn_fight_club
 
         vb.addWidget(_hsep())
-        self._sorting_section_label = sl(_tr("sidebar.section.cat_sorting", default="CAT SORTING"))
+        self._sorting_section_label = sl(_tr("sidebar.section.cat_sorting", default="Cat Scoring"))
         vb.addWidget(self._sorting_section_label)
         self._btn_auto_scoring = _sidebar_btn(_tr("sidebar.button.auto_scoring", default="Automatic Scoring"))
         self._btn_auto_scoring.clicked.connect(self._open_auto_scoring_view)
         vb.addWidget(self._btn_auto_scoring)
-        self._btn_manual_scoring = _sidebar_btn(_tr("sidebar.button.manual_scoring", default="Manual Scoring"))
+        self._btn_manual_scoring = _sidebar_btn(_tr("sidebar.button.manual_scoring", default="Simple Scoring"))
         self._btn_manual_scoring.clicked.connect(self._open_manual_scoring_view)
         vb.addWidget(self._btn_manual_scoring)
-        self._btn_breed_priority = _sidebar_btn(_tr("sidebar.button.breed_priority", default="Breed Priority"))
+        self._btn_breed_priority = _sidebar_btn(_tr("sidebar.button.breed_priority", default="Detailed Priority"))
         self._btn_breed_priority.clicked.connect(self._open_breed_priority_view)
         vb.addWidget(self._btn_breed_priority)
 
@@ -1263,7 +1263,7 @@ class MainWindow(QMainWindow):
                 self._apply_fight_club_layout(False, force=True)
         self._filters_section_label.setText(_tr("sidebar.section.filters"))
         if hasattr(self, "_sorting_section_label"):
-            self._sorting_section_label.setText(_tr("sidebar.section.cat_sorting", default="CAT SORTING"))
+            self._sorting_section_label.setText(_tr("sidebar.section.cat_sorting", default="Cat Scoring"))
         self._breeding_section_label.setText(_tr("sidebar.section.breeding"))
         self._info_section_label.setText(_tr("sidebar.section.info"))
         self._rooms_section_label.setText(_tr("sidebar.section.rooms"))

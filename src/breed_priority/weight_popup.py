@@ -32,7 +32,7 @@ def show_weights_popup(parent, weights: dict) -> None:
     vb.setContentsMargins(16, 16, 16, 16)
     vb.setSpacing(8)
 
-    title = QLabel("Breed Priority - Scoring Weights")
+    title = QLabel("Detailed Priority - Scoring Weights")
     title.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:13px; font-weight:bold;")
     vb.addWidget(title)
 
