@@ -29,6 +29,23 @@ src/
     types.py                        # Dataclasses: RoomConfig, OptimizationParams, ScoredPair, etc.
     optimizer.py                    # Room assignment algorithm
   visual_mutation_catalog.py        # Lookup tables: (slot, mutation_id) -> display name
+  breed_priority/                   # Detailed Scoring view (standalone UI package)
+    __init__.py                     # BreedPriorityView — main widget
+    scoring.py                      # compute_breed_priority_score, ScoreResult, weights
+    filters.py                      # FilterState + FilterDialog
+    profiles.py                     # 5-slot profile UI + load/save/delete handlers
+    complex_weights/                # ComplexWeight rule system (model, dialog, evaluator)
+    columns.py, column_values.py    # Score table column layout + per-mode values
+    recompute_helpers.py            # Relationship maps, compute_all_scores, heatmap norms
+    stats_overview.py               # Current Stats Overview popup
+    weight_popup.py                 # Weight editor popup
+    tooltips.py                     # HTML tooltip builders
+    delegates.py                    # Custom item delegates + header overlays
+    theme.py, styles.py             # Colors + stylesheets
+    collapsible_splitter.py         # Left-panel collapsible splitter
+    color_utils.py, chip_colors.py  # Color math + chip color pairs
+    stat_text_formatter.py          # Stat-cell text formatter
+    constants.py                    # Backwards-compat re-exports
   mewgenics/
     __init__.py                     # Package init + module-level setup (locale, tags, thresholds)
     app.py                          # main() — QApplication, palette, save selector
@@ -132,6 +149,8 @@ All PySide6 code lives here. `mewgenics/__init__.py` runs one-time initializatio
 - `views/calibration.py` — `CalibrationView` (parser field calibration, dev use)
 - `views/mutation_planner.py` — `MutationDisorderPlannerView` (mutation/disorder targeting)
 - `views/furniture.py` — `FurnitureView` (furniture stat viewer per room)
+- `views/manual_scoring.py` — `ManualScoringView` (Simple Scoring — point-value editor)
+- `../breed_priority/` — `BreedPriorityView` (Detailed Scoring — weighted breed-priority ranker with profiles, complex weights, filters, heatmap)
 
 **Models & Workers:**
 - `models/cat_table_model.py` — `CatTableModel`, `NameTagDelegate`

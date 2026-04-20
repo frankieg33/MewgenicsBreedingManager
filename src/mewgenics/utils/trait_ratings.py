@@ -1,7 +1,8 @@
 """Shared trait desirability ratings with 5-slot profiles.
 
-Used by both Automatic Scoring and Manual Scoring views.
-Persists to a single JSON sidecar file per save.
+Used by the Simple Scoring (Manual Scoring) view. Persists to a single
+JSON sidecar file per save. Detailed Scoring (Breed Priority) has its
+own richer per-profile persistence in breed_priority.json.
 """
 
 from __future__ import annotations

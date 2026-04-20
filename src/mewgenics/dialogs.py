@@ -912,10 +912,10 @@ class OnboardingDialog(QDialog):
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "5. Cat Sorting &mdash; Automatic Scoring",
+            "5. Cat Scoring &mdash; Detailed Scoring",
             """
-            <p>The <b>Automatic Scoring</b> view ranks every cat with a breed priority score
-            based on configurable weights. Open it from the <b>Cat Sorting</b> section in the sidebar.</p>
+            <p>The <b>Detailed Scoring</b> view ranks every cat with a breed priority score
+            based on configurable weights. Open it from the <b>Cat Scoring</b> section in the sidebar.</p>
             <ul>
               <li><b>Scope:</b> Choose which rooms to include. Scores adjust based on what&apos;s in scope &mdash;
                   a rare stat-7 is worth more if fewer scope cats share it.</li>
@@ -923,21 +923,20 @@ class OnboardingDialog(QDialog):
                   libido, aggression, trait ratings, and more. Hover any weight for a description.</li>
               <li><b>Trait Ratings:</b> Double-click abilities or mutations in the right panel to rate them
                   as Top Priority, Desirable, or Undesirable. Cats owning rare top-priority traits score higher.</li>
-              <li><b>Profiles:</b> Save up to 5 independent weight/trait setups. Profiles are shared
-                  with Manual Scoring so you can switch approaches instantly.</li>
+              <li><b>Profiles:</b> Save up to 5 independent weight/trait setups so you can switch approaches instantly.</li>
               <li><b>Heatmap:</b> Toggle color-coding to spot strengths and weaknesses at a glance.</li>
             </ul>
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "6. Cat Sorting &mdash; Manual Scoring",
+            "6. Cat Scoring &mdash; Simple Scoring",
             """
-            <p>The <b>Manual Scoring</b> view lets you assign point values to individual stats,
+            <p>The <b>Simple Scoring</b> view lets you assign point values to individual stats,
             mutations, disorders, and personality traits, then sort by total score.</p>
             <ul>
               <li>Great for specific breeding goals like &ldquo;I need high STR melee cats&rdquo;.</li>
               <li>Switch between per-mutation weights or blanket desired/undesired mode.</li>
-              <li>Shares trait rating profiles with Automatic Scoring &mdash; changes sync both ways.</li>
+              <li>Uses its own trait-rating profiles stored per save.</li>
             </ul>
             """,
         ))

@@ -22,13 +22,13 @@ If you'd like to support the project, you can [here](https://ko-fi.com/frankieg3
 
 ## Features
 
-### Cat Sorting
+### Cat Scoring
 
 Two views for evaluating which cats to keep, breed, or cull:
 
-- **Automatic Scoring** — assigns a breed priority score to every cat based on configurable weights: stat rarity, genetic safety, trait ratings, personality, age, and relationships. Includes heatmap mode, scope filtering by room, and 5 independent profiles for different strategies.
-- **Manual Scoring** — assign point values to individual stats, mutations, and traits, then sort by total. Great for targeted goals like "high STR melee cats" or "collect all rare mutations."
-- Shared trait rating profiles — rate abilities as Top Priority, Desirable, or Undesirable. Ratings sync between both scoring views.
+- **Detailed Scoring** — assigns a breed priority score to every cat based on configurable weights: stat rarity, genetic safety, trait ratings, personality, age, and relationships. Includes heatmap mode, scope filtering by room, complex weight rules, and 5 independent profiles for different strategies.
+- **Simple Scoring** — assign point values to individual stats, mutations, and traits, then sort by total. Great for targeted goals like "high STR melee cats" or "collect all rare mutations."
+- Each view has its own trait-rating profiles (5 slots) stored per save.
 
 ### Breeding & Genetics
 

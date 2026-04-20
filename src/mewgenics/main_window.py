@@ -2765,6 +2765,7 @@ class MainWindow(QMainWindow):
             ("mutation_planner", getattr(self, "_mutation_planner_view", None)),
             ("furniture", getattr(self, "_furniture_view", None)),
             ("manual_scoring", getattr(self, "_manual_scoring_view", None)),
+            ("breed_priority", getattr(self, "_breed_priority_view", None)),
         ]
         for kind, widget in checks:
             if widget is not None and widget.isVisible():
@@ -2845,6 +2846,10 @@ class MainWindow(QMainWindow):
                 self._show_mutation_planner_view()
             elif view == "furniture":
                 self._show_furniture_view()
+            elif view == "manual_scoring":
+                self._show_manual_scoring_view()
+            elif view == "breed_priority":
+                self._show_breed_priority_view()
         finally:
             self._nav_suppress = False
 
