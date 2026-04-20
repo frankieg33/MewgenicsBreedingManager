@@ -2295,14 +2295,6 @@ class MainWindow(QMainWindow):
             _mutation_display_name,
             _ability_tip,
         )
-        try:
-            self._breed_priority_view.configure_deck_save_pull(
-                current_save_provider=lambda: self._current_save,
-                on_reload_requested=self._reload,
-                on_status_message=lambda msg: self.statusBar().showMessage(msg),
-            )
-        except Exception:
-            pass
         self._breed_priority_view.hide()
         self._content_vb.addWidget(self._breed_priority_view, 1)
         self._push_cats_to_view_if_loaded("breed_priority", self._breed_priority_view)
