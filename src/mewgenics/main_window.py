@@ -43,7 +43,6 @@ from mewgenics.utils.config import (
     _save_current_view, _load_current_view,
     _set_save_dir, find_save_files,
     _saved_room_optimizer_auto_recalc, _set_room_optimizer_auto_recalc,
-    _saved_auto_scoring_auto_calc, _set_auto_scoring_auto_calc,
     _saved_manual_scoring_auto_calc, _set_manual_scoring_auto_calc,
     _save_splitter_state, _bind_splitter_persistence,
     _saved_zoom_percent, _set_zoom_percent,
@@ -130,7 +129,6 @@ from mewgenics.views.calibration import CalibrationView
 from mewgenics.views.mutation_planner import MutationDisorderPlannerView
 from mewgenics.views.furniture import FurnitureView
 from mewgenics.views.manual_scoring import ManualScoringView
-from mewgenics.views.auto_scoring import AutoScoringView
 from mewgenics.utils.trait_ratings import TraitRatings
 
 from breed_priority import BreedPriorityView
@@ -279,7 +277,6 @@ class MainWindow(QMainWindow):
         self._mutation_planner_view: Optional['MutationDisorderPlannerView'] = None
         self._furniture_view: Optional[FurnitureView] = None
         self._manual_scoring_view: Optional[ManualScoringView] = None
-        self._auto_scoring_view: Optional[AutoScoringView] = None
         self._breed_priority_view: Optional[BreedPriorityView] = None
         self._trait_ratings: Optional[TraitRatings] = None
         self._cats_generation: int = 0
@@ -456,12 +453,6 @@ class MainWindow(QMainWindow):
         self._room_optimizer_auto_recalc_action.setChecked(_saved_room_optimizer_auto_recalc())
         self._room_optimizer_auto_recalc_action.toggled.connect(self._toggle_room_optimizer_auto_recalc)
         vm.addAction(self._room_optimizer_auto_recalc_action)
-
-        self._auto_scoring_auto_calc_action = QAction(_tr("menu.settings.auto_scoring_auto_calc", default="Auto Recalculate Auto Scoring"), self)
-        self._auto_scoring_auto_calc_action.setCheckable(True)
-        self._auto_scoring_auto_calc_action.setChecked(_saved_auto_scoring_auto_calc())
-        self._auto_scoring_auto_calc_action.toggled.connect(self._toggle_auto_scoring_auto_calc)
-        vm.addAction(self._auto_scoring_auto_calc_action)
 
         self._manual_scoring_auto_calc_action = QAction(_tr("menu.settings.manual_scoring_auto_calc", default="Auto Recalculate Manual Scoring"), self)
         self._manual_scoring_auto_calc_action.setCheckable(True)
@@ -1000,9 +991,6 @@ class MainWindow(QMainWindow):
         vb.addWidget(_hsep())
         self._sorting_section_label = sl(_tr("sidebar.section.cat_sorting", default="CAT SCORING"))
         vb.addWidget(self._sorting_section_label)
-        self._btn_auto_scoring = _sidebar_btn(_tr("sidebar.button.auto_scoring", default="Automatic Scoring"))
-        self._btn_auto_scoring.clicked.connect(self._open_auto_scoring_view)
-        vb.addWidget(self._btn_auto_scoring)
         self._btn_manual_scoring = _sidebar_btn(_tr("sidebar.button.manual_scoring", default="Simple Scoring"))
         self._btn_manual_scoring.clicked.connect(self._open_manual_scoring_view)
         vb.addWidget(self._btn_manual_scoring)
@@ -1309,8 +1297,6 @@ class MainWindow(QMainWindow):
             self._reset_ui_settings_action.setText(_tr("menu.settings.reset_ui_defaults"))
         if hasattr(self, "_room_optimizer_auto_recalc_action"):
             self._room_optimizer_auto_recalc_action.setText(_tr("menu.settings.room_optimizer_auto_recalc", default="Auto Recalculate Room Optimizer"))
-        if hasattr(self, "_auto_scoring_auto_calc_action"):
-            self._auto_scoring_auto_calc_action.setText(_tr("menu.settings.auto_scoring_auto_calc", default="Auto Recalculate Auto Scoring"))
         if hasattr(self, "_manual_scoring_auto_calc_action"):
             self._manual_scoring_auto_calc_action.setText(_tr("menu.settings.manual_scoring_auto_calc", default="Auto Recalculate Manual Scoring"))
 
@@ -2210,25 +2196,6 @@ class MainWindow(QMainWindow):
             self._manual_scoring_auto_calc_action.setChecked(checked)
             self._manual_scoring_auto_calc_action.blockSignals(False)
 
-    def _ensure_auto_scoring_view(self):
-        if self._auto_scoring_view is not None:
-            return
-        self._auto_scoring_view = AutoScoringView(self)
-        self._auto_scoring_view.hide()
-        self._content_vb.addWidget(self._auto_scoring_view, 1)
-        self._auto_scoring_view._auto_calc_chk.toggled.connect(self._sync_auto_scoring_auto_calc_action)
-        if self._trait_ratings is not None:
-            self._auto_scoring_view.set_trait_ratings(self._trait_ratings)
-        if self._breeding_cache is not None:
-            self._auto_scoring_view.set_cache(self._breeding_cache)
-        self._push_cats_to_view_if_loaded("auto_scoring", self._auto_scoring_view)
-
-    def _sync_auto_scoring_auto_calc_action(self, checked: bool):
-        if hasattr(self, "_auto_scoring_auto_calc_action"):
-            self._auto_scoring_auto_calc_action.blockSignals(True)
-            self._auto_scoring_auto_calc_action.setChecked(checked)
-            self._auto_scoring_auto_calc_action.blockSignals(False)
-
     def _ensure_perfect_planner_view(self):
         if self._perfect_planner_view is not None:
             return
@@ -2304,7 +2271,6 @@ class MainWindow(QMainWindow):
         self._ensure_room_optimizer_view()
         self._ensure_mutation_planner_view()
         self._ensure_manual_scoring_view()
-        self._ensure_auto_scoring_view()
         self._ensure_breed_priority_view()
         self._ensure_perfect_planner_view()
         self._ensure_safe_breeding_view()
@@ -2334,8 +2300,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if hasattr(self, "_header"):
@@ -2360,8 +2324,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2394,8 +2356,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._tree_view is not None:
@@ -2419,8 +2379,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2449,8 +2407,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._safe_breeding_view is not None:
@@ -2475,8 +2431,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2505,8 +2459,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._breeding_partners_view is not None:
@@ -2530,8 +2482,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2560,8 +2510,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._room_optimizer_view is not None:
@@ -2585,8 +2533,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2615,8 +2561,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._perfect_planner_view is not None:
@@ -2647,8 +2591,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2675,8 +2617,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._calibration_view is not None:
@@ -2702,8 +2642,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
         if hasattr(self, "_mutation_planner_view") and self._mutation_planner_view is not None:
@@ -2734,8 +2672,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._mutation_planner_view is not None:
@@ -2759,8 +2695,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2789,8 +2723,6 @@ class MainWindow(QMainWindow):
             self._mutation_planner_view.hide()
         if hasattr(self, "_manual_scoring_view") and self._manual_scoring_view is not None:
             self._manual_scoring_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._furniture_view is not None:
@@ -2816,8 +2748,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(True)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -2835,7 +2765,6 @@ class MainWindow(QMainWindow):
             ("mutation_planner", getattr(self, "_mutation_planner_view", None)),
             ("furniture", getattr(self, "_furniture_view", None)),
             ("manual_scoring", getattr(self, "_manual_scoring_view", None)),
-            ("auto_scoring", getattr(self, "_auto_scoring_view", None)),
         ]
         for kind, widget in checks:
             if widget is not None and widget.isVisible():
@@ -3633,8 +3562,6 @@ class MainWindow(QMainWindow):
             self._perfect_planner_view.set_cache(cache)
         if self._room_optimizer_view is not None:
             self._room_optimizer_view.set_cache(cache)
-        if self._auto_scoring_view is not None:
-            self._auto_scoring_view.set_cache(cache)
         self._cache_progress.setFormat(_tr("loading.cache.pair_risks"))
 
     def _on_cache_ready(self, cache: BreedingCache, source_worker: Optional[BreedingCacheWorker] = None):
@@ -3651,8 +3578,6 @@ class MainWindow(QMainWindow):
             self._room_optimizer_view.set_cache(cache)
         if self._perfect_planner_view is not None:
             self._perfect_planner_view.set_cache(cache)
-        if self._auto_scoring_view is not None:
-            self._auto_scoring_view.set_cache(cache)
         self.statusBar().showMessage(
             self.statusBar().currentMessage() + _tr("status.cache_ready_suffix", default="  |  Breeding cache ready")
         )
@@ -3833,8 +3758,6 @@ class MainWindow(QMainWindow):
                 self._room_optimizer_view.set_cache(None)
             if self._perfect_planner_view is not None:
                 self._perfect_planner_view.set_cache(None)
-            if self._auto_scoring_view is not None:
-                self._auto_scoring_view.set_cache(None)
             self._refresh_threshold_runtime(cats)
             self._source_model.load(cats, accessible_cats=accessible_cats)
             self._rebuild_room_buttons(cats)
@@ -3855,8 +3778,6 @@ class MainWindow(QMainWindow):
             if self._current_save:
                 scoring_path = _scoring_path(self._current_save)
                 self._trait_ratings = TraitRatings(scoring_path)
-                if self._auto_scoring_view is not None:
-                    self._auto_scoring_view.set_trait_ratings(self._trait_ratings)
                 if self._manual_scoring_view is not None:
                     self._manual_scoring_view.set_trait_ratings(self._trait_ratings)
 
@@ -3926,8 +3847,6 @@ class MainWindow(QMainWindow):
             self._furniture_view.save_session_state()
         if self._manual_scoring_view is not None:
             self._manual_scoring_view.save_session_state()
-        if self._auto_scoring_view is not None:
-            self._auto_scoring_view.save_session_state()
         _bp_view = getattr(self, "_breed_priority_view", None)
         if _bp_view is not None:
             try:
@@ -3988,15 +3907,6 @@ class MainWindow(QMainWindow):
         if self._room_optimizer_view is not None and hasattr(self._room_optimizer_view, "set_auto_recalculate"):
             self._room_optimizer_view.set_auto_recalculate(False)
 
-        _set_auto_scoring_auto_calc(False)
-        if hasattr(self, "_auto_scoring_auto_calc_action"):
-            self._auto_scoring_auto_calc_action.blockSignals(True)
-            self._auto_scoring_auto_calc_action.setChecked(False)
-            self._auto_scoring_auto_calc_action.blockSignals(False)
-        asv = getattr(self, "_auto_scoring_view", None)
-        if asv is not None and hasattr(asv, "set_auto_recalculate"):
-            asv.set_auto_recalculate(False)
-
         _set_manual_scoring_auto_calc(True)
         if hasattr(self, "_manual_scoring_auto_calc_action"):
             self._manual_scoring_auto_calc_action.blockSignals(True)
@@ -4052,11 +3962,6 @@ class MainWindow(QMainWindow):
         _set_room_optimizer_auto_recalc(bool(checked))
         if self._room_optimizer_view is not None and hasattr(self._room_optimizer_view, "set_auto_recalculate"):
             self._room_optimizer_view.set_auto_recalculate(bool(checked))
-
-    def _toggle_auto_scoring_auto_calc(self, checked: bool):
-        _set_auto_scoring_auto_calc(bool(checked))
-        if self._auto_scoring_view is not None and hasattr(self._auto_scoring_view, "set_auto_recalculate"):
-            self._auto_scoring_view.set_auto_recalculate(bool(checked))
 
     def _toggle_manual_scoring_auto_calc(self, checked: bool):
         _set_manual_scoring_auto_calc(bool(checked))
@@ -4386,40 +4291,6 @@ class MainWindow(QMainWindow):
         _save_current_view("furniture")
         self._show_furniture_view()
 
-    def _open_auto_scoring_view(self):
-        self._push_nav_history()
-        _save_current_view("auto_scoring")
-        self._show_auto_scoring_view()
-
-    def _show_auto_scoring_view(self):
-        self._ensure_auto_scoring_view()
-        if self._active_btn is not None:
-            self._active_btn.setChecked(False)
-        self._active_btn = None
-        if hasattr(self, "_header"):
-            self._header.hide()
-        if hasattr(self, "_table_view_container"):
-            self._table_view_container.hide()
-        for view_attr in ("_tree_view", "_safe_breeding_view", "_breeding_partners_view",
-                          "_room_optimizer_view", "_perfect_planner_view", "_calibration_view",
-                          "_mutation_planner_view", "_furniture_view", "_manual_scoring_view",
-                          "_breed_priority_view"):
-            v = getattr(self, view_attr, None)
-            if v is not None:
-                v.hide()
-        if self._auto_scoring_view is not None:
-            self._set_view_cats_if_needed("auto_scoring", self._auto_scoring_view, self._cats)
-            self._auto_scoring_view.show()
-        for btn_attr in ("_btn_tree_view", "_btn_safe_breeding_view", "_btn_breeding_partners_view",
-                         "_btn_room_optimizer", "_btn_perfect_planner", "_btn_calibration",
-                         "_btn_mutation_planner", "_btn_furniture_view", "_btn_manual_scoring",
-                         "_btn_breed_priority"):
-            btn = getattr(self, btn_attr, None)
-            if btn is not None:
-                btn.setChecked(False)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(True)
-
     def _open_manual_scoring_view(self):
         self._push_nav_history()
         _save_current_view("manual_scoring")
@@ -4450,8 +4321,6 @@ class MainWindow(QMainWindow):
             self._mutation_planner_view.hide()
         if hasattr(self, "_furniture_view") and self._furniture_view is not None:
             self._furniture_view.hide()
-        if hasattr(self, "_auto_scoring_view") and self._auto_scoring_view is not None:
-            self._auto_scoring_view.hide()
         if hasattr(self, "_breed_priority_view") and self._breed_priority_view is not None:
             self._breed_priority_view.hide()
         if self._manual_scoring_view is not None:
@@ -4475,8 +4344,6 @@ class MainWindow(QMainWindow):
             self._btn_furniture_view.setChecked(False)
         if hasattr(self, "_btn_manual_scoring"):
             self._btn_manual_scoring.setChecked(True)
-        if hasattr(self, "_btn_auto_scoring"):
-            self._btn_auto_scoring.setChecked(False)
         if hasattr(self, "_btn_breed_priority"):
             self._btn_breed_priority.setChecked(False)
 
@@ -4496,8 +4363,7 @@ class MainWindow(QMainWindow):
             self._table_view_container.hide()
         for view_attr in ("_tree_view", "_safe_breeding_view", "_breeding_partners_view",
                           "_room_optimizer_view", "_perfect_planner_view", "_calibration_view",
-                          "_mutation_planner_view", "_furniture_view", "_manual_scoring_view",
-                          "_auto_scoring_view"):
+                          "_mutation_planner_view", "_furniture_view", "_manual_scoring_view"):
             v = getattr(self, view_attr, None)
             if v is not None:
                 v.hide()
@@ -4506,8 +4372,7 @@ class MainWindow(QMainWindow):
             self._breed_priority_view.show()
         for btn_attr in ("_btn_tree_view", "_btn_safe_breeding_view", "_btn_breeding_partners_view",
                          "_btn_room_optimizer", "_btn_perfect_planner", "_btn_calibration",
-                         "_btn_mutation_planner", "_btn_furniture_view", "_btn_manual_scoring",
-                         "_btn_auto_scoring"):
+                         "_btn_mutation_planner", "_btn_furniture_view", "_btn_manual_scoring"):
             btn = getattr(self, btn_attr, None)
             if btn is not None:
                 btn.setChecked(False)
@@ -4528,7 +4393,6 @@ class MainWindow(QMainWindow):
             "mutation_planner":   self._show_mutation_planner_view,
             "furniture":          self._show_furniture_view,
             "manual_scoring":     self._show_manual_scoring_view,
-            "auto_scoring":       self._show_auto_scoring_view,
             "breed_priority":     self._show_breed_priority_view,
         }
         fn = _restore_map.get(view)

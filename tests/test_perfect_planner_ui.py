@@ -1471,7 +1471,6 @@ def test_flush_persistent_view_state_saves_room_optimizer_on_exit(planner_config
         _mutation_planner_view=_PlainView("mutation_planner"),
         _furniture_view=_PlainView("furniture"),
         _manual_scoring_view=None,
-        _auto_scoring_view=None,
         _trait_ratings=None,
     )
 
