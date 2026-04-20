@@ -260,14 +260,18 @@ _STAT_LABELS = {
 }
 
 
+_CLASS_STRING_TAIL_OFFSET = 115  # class string ends this many bytes before blob end
+
+
 @dataclass(slots=True)
 class GameData:
     """Resource-backed lookup tables used by parser helpers."""
 
-    visual_mutation_data: dict[str, dict[int, tuple[str, str, str]]] = field(default_factory=dict)
+    visual_mutation_data: dict[str, dict[int, tuple[str, str, str, bool]]] = field(default_factory=dict)
     furniture_data: dict[str, "FurnitureDefinition"] = field(default_factory=dict)
     game_tag_data: list[dict[str, str]] = field(default_factory=list)
     swf_symbol_data: dict[str, list[str]] = field(default_factory=dict)
+    class_stat_mods: dict[str, dict[str, int]] = field(default_factory=dict)
 
     @classmethod
     def from_gpak(cls, gpak_path: str | None) -> "GameData":
@@ -305,7 +309,7 @@ class GameData:
                     key_column="KEY",
                     value_column="en",
                 )
-                result: dict[str, dict[int, tuple[str, str, str]]] = {}
+                result: dict[str, dict[int, tuple[str, str, str, bool]]] = {}
                 furniture_data: dict[str, FurnitureDefinition] = {}
                 game_tag_data: list[dict[str, str]] = []
                 swf_symbol_data: dict[str, list[str]] = {}
@@ -330,13 +334,14 @@ class GameData:
                         symbol_names = _parse_swf_symbol_names(raw)
                         if symbol_names:
                             swf_symbol_data[fname] = symbol_names
-                return cls(result, furniture_data, game_tag_data, swf_symbol_data)
+                class_stat_mods = _load_class_stat_mods(f, file_offsets)
+                return cls(result, furniture_data, game_tag_data, swf_symbol_data, class_stat_mods)
         except Exception:
             return cls()
 
 
 # Populated at runtime via set_visual_mut_data() from the main module.
-_VISUAL_MUT_DATA: dict[str, dict[int, tuple[str, str, str]]] = {}
+_VISUAL_MUT_DATA: dict[str, dict[int, tuple[str, str, str, bool]]] = {}
 
 # Mutation names that map to multiple body parts in the catalog — these must
 # always be disambiguated with a slot label even when a cat only has one.
@@ -349,7 +354,75 @@ _GLOBALLY_AMBIGUOUS_MUTATION_NAMES: frozenset[str] = frozenset(
 del _name_to_parts, _cat_part, _mid, _mname
 
 
-def set_visual_mut_data(data: dict[str, dict[int, tuple[str, str, str]]]):
+# Class stat modifiers: {class_name: {STAT_NAME: delta}}
+# Populated at runtime via set_class_stat_mods() from the main module.
+_CLASS_STAT_MODS: dict[str, dict[str, int]] = {}
+
+# Stat abbreviation mapping for class gon files.
+_GON_STAT_KEY_TO_NAME = {
+    "str": "STR", "con": "CON", "int": "INT",
+    "dex": "DEX", "spd": "SPD", "lck": "LCK", "cha": "CHA",
+}
+
+
+def set_class_stat_mods(data: dict[str, dict[str, int]]):
+    """Update the class stat modifier lookup data (called after gpak loading)."""
+    _CLASS_STAT_MODS.clear()
+    _CLASS_STAT_MODS.update(data)
+
+
+def get_class_stat_mods(class_name: str) -> dict[str, int]:
+    """Return {STAT_NAME: delta} for a class, or empty dict if unknown."""
+    return _CLASS_STAT_MODS.get(class_name, {})
+
+
+def _parse_class_stat_mods_gon(content: str) -> dict[str, dict[str, int]]:
+    """Parse a class GON file and extract stat_mods for each class."""
+    result: dict[str, dict[str, int]] = {}
+    for class_name, block in _iter_gon_blocks(content):
+        stat_mods_match = re.search(r"stat_mods\s*\{", block)
+        if not stat_mods_match:
+            continue
+        brace_start = stat_mods_match.end() - 1
+        depth = 0
+        pos = brace_start
+        while pos < len(block):
+            if block[pos] == "{":
+                depth += 1
+            elif block[pos] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            pos += 1
+        sub_block = block[brace_start + 1:pos]
+        mods: dict[str, int] = {}
+        for line in sub_block.splitlines():
+            line = line.split("//")[0].strip()
+            parts = line.split()
+            if len(parts) >= 2 and parts[0] in _GON_STAT_KEY_TO_NAME:
+                try:
+                    mods[_GON_STAT_KEY_TO_NAME[parts[0]]] = int(parts[1])
+                except ValueError:
+                    continue
+        if mods:
+            result[class_name] = mods
+    return result
+
+
+def _load_class_stat_mods(file_obj, file_offsets: dict[str, tuple[int, int]]) -> dict[str, dict[str, int]]:
+    """Load class stat modifiers from class GON files in the gpak."""
+    merged: dict[str, dict[str, int]] = {}
+    for fname in ("data/classes/classes.gon", "data/classes/advanced_classes.gon"):
+        if fname not in file_offsets:
+            continue
+        foff, fsz = file_offsets[fname]
+        file_obj.seek(foff)
+        content = file_obj.read(fsz).decode("utf-8", errors="replace")
+        merged.update(_parse_class_stat_mods_gon(content))
+    return merged
+
+
+def set_visual_mut_data(data: dict[str, dict[int, tuple[str, str, str, bool]]]):
     """Update the visual mutation lookup data (called after gpak loading)."""
     global _VISUAL_MUT_DATA, _GLOBALLY_AMBIGUOUS_MUTATION_NAMES
     _VISUAL_MUT_DATA = data
@@ -642,6 +715,7 @@ def _parse_mutation_gon(
         raw_name = name_match.group(1).strip().title() if name_match else f"Mutation {slot_id}"
         raw_name = re.sub(r"\s*\(.*", "", raw_name).strip() or raw_name
         gon_stats = _gon_stat_string(block)
+        is_birth_defect = bool(re.search(r"\btag\s+birth_defect\b", block))
         csv_key = f"{csv_prefix}{slot_id}_DESC"
         if csv_key in mutation_strings:
             stat_desc = _resolve_game_string(mutation_strings[csv_key], game_strings).strip().rstrip(".")
@@ -649,16 +723,18 @@ def _parse_mutation_gon(
             stat_desc = _resolve_game_string(game_strings[csv_key], game_strings).strip().rstrip(".")
         else:
             stat_desc = gon_stats
-        result[slot_id] = (raw_name, stat_desc, gon_stats)
+        result[slot_id] = (raw_name, stat_desc, gon_stats, is_birth_defect)
 
     idx = 0
     while idx < len(content):
-        match = re.search(r"(?<!\w)(\d{3,})\s*\{", content[idx:])
+        # Match any numeric ID (including low IDs like 2); skip non-defect low
+        # IDs below — but include them when they carry `tag birth_defect`.
+        match = re.search(r"(?<!\w)(\d+)\s*\{", content[idx:])
         if not match:
             break
         slot_id = int(match.group(1))
         block, idx = _extract_block(idx + match.end())
-        if slot_id < 300:
+        if slot_id < 300 and not re.search(r"\btag\s+birth_defect\b", block):
             continue
         _block_to_entry(slot_id, block)
 
@@ -671,13 +747,13 @@ def _parse_mutation_gon(
             raw_name = name_match.group(1).strip().title() if name_match else "Missing Part"
             raw_name = re.sub(r"\s*\(.*", "", raw_name).strip() or raw_name
             stat_desc = _resolve_game_string(mutation_strings[csv_key_m2], game_strings).strip().rstrip(".")
-            result[0xFFFFFFFE] = (raw_name, stat_desc, _gon_stat_string(block))
+            result[0xFFFFFFFE] = (raw_name, stat_desc, _gon_stat_string(block), True)
         elif csv_key_m2 in game_strings:
             name_match = re.search(r"//\s*(.+)", block)
             raw_name = name_match.group(1).strip().title() if name_match else "Missing Part"
             raw_name = re.sub(r"\s*\(.*", "", raw_name).strip() or raw_name
             stat_desc = _resolve_game_string(game_strings[csv_key_m2], game_strings).strip().rstrip(".")
-            result[0xFFFFFFFE] = (raw_name, stat_desc, _gon_stat_string(block))
+            result[0xFFFFFFFE] = (raw_name, stat_desc, _gon_stat_string(block), True)
         else:
             _block_to_entry(0xFFFFFFFE, block)
 
@@ -986,7 +1062,14 @@ def _read_visual_mutation_entries(table: list[int]) -> list[dict[str, object]]:
         if gpak_info is None and catalog_name is None and mutation_id != 0xFFFF_FFFE:
             continue
         if gpak_info:
-            raw_name, stat_desc, gon_stats = gpak_info
+            # Tolerate 2-, 3-, or 4-tuple GPAK info for back-compat with tests.
+            # Full tuple is (raw_name, stat_desc, gon_stats, is_birth_defect).
+            _gi = tuple(gpak_info)
+            raw_name = _gi[0] if len(_gi) >= 1 else ""
+            stat_desc = _gi[1] if len(_gi) >= 2 else ""
+            gon_stats = _gi[2] if len(_gi) >= 3 else ""
+            if len(_gi) >= 4 and bool(_gi[3]):
+                is_defect = True
             raw_name = str(raw_name).strip()
             detail = str(stat_desc).strip()
             if raw_name and not re.match(r'^Mutation \d+$', raw_name):
@@ -1746,6 +1829,28 @@ class Cat:
                 logger.debug("Cat %s: age extraction failed", cat_key, exc_info=True)
 
         self.parsed_age = self.age
+
+        # Extract class name from a fixed offset before blob end.
+        # The class string ends exactly 115 bytes before the blob end
+        # (stored as u32 length + u32 zero-pad + UTF-8 class name).
+        self.cat_class: str = ""
+        self.class_stat_mods: dict[str, int] = {}
+        try:
+            class_str_end = len(raw) - _CLASS_STRING_TAIL_OFFSET
+            for class_len in range(3, 30):
+                prefix_pos = class_str_end - class_len - 8
+                if prefix_pos < 0:
+                    break
+                length = struct.unpack_from('<I', raw, prefix_pos)[0]
+                zero = struct.unpack_from('<I', raw, prefix_pos + 4)[0]
+                if length == class_len and zero == 0:
+                    class_name = raw[prefix_pos + 8:prefix_pos + 8 + class_len].decode('utf-8', errors='replace')
+                    if class_name != "Colorless":
+                        self.cat_class = class_name
+                        self.class_stat_mods = _CLASS_STAT_MODS.get(class_name, {})
+                    break
+        except Exception:
+            logger.debug("Cat %s: class extraction failed", cat_key, exc_info=True)
 
         # Death day: an i64 at offset +8 from creation_day (len(raw) - 95).
         # Value of -1 means alive; a non-negative value is the day the cat died.

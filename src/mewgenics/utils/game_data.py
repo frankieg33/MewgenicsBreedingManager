@@ -1,7 +1,7 @@
 """GPAK loading and game data reload."""
 import os
 
-from save_parser import GameData, FurnitureDefinition, set_visual_mut_data
+from save_parser import GameData, FurnitureDefinition, set_visual_mut_data, set_class_stat_mods
 
 from mewgenics.utils.config import _load_app_config, _save_app_config, _candidate_gpak_paths
 from mewgenics.utils.abilities import _load_ability_descriptions, _ABILITY_DESC
@@ -31,6 +31,7 @@ def _reload_game_data():
     _GAME_TAG_DEFS = list(game_data.game_tag_data)
     _SWF_SYMBOL_DATA = {key: list(value) for key, value in game_data.swf_symbol_data.items()}
     set_visual_mut_data(_VISUAL_MUT_DATA)
+    set_class_stat_mods(game_data.class_stat_mods)
     _load_game_tag_definitions(_GAME_TAG_DEFS)
     _reload_ability_icon_cache(_GPAK_PATH)
 
