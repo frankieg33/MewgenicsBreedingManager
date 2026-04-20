@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt, QEvent, QModelIndex, QItemSelection, QItemSelectionModel,
-    QFileSystemWatcher, QThread, QTimer, QSize,
+    QFileSystemWatcher, QThread, QTimer, QSize, QByteArray,
 )
 from PySide6.QtGui import (
     QColor, QBrush, QAction, QActionGroup, QFont, QKeySequence,
@@ -55,6 +55,8 @@ from mewgenics.utils.config import (
     _saved_roster_visual_mode, _set_roster_visual_mode,
     _gpak_search_start_dir,
     _candidate_gpak_paths,
+    _set_last_save,
+    _save_window_geometry, _load_window_geometry,
 )
 from mewgenics.utils.localization import (
     _SUPPORTED_LANGUAGES, ROOM_DISPLAY, COLUMNS,
@@ -238,6 +240,12 @@ class MainWindow(QMainWindow):
         _refresh_localized_constants()
         self.setWindowTitle(_tr("app.title"))
         self.resize(1440, 900)
+        saved_geometry = _load_window_geometry()
+        if saved_geometry:
+            try:
+                self.restoreGeometry(QByteArray.fromBase64(saved_geometry.encode("ascii")))
+            except Exception:
+                pass
 
         self._current_save = None
         self._cats: list[Cat] = []
@@ -3659,6 +3667,7 @@ class MainWindow(QMainWindow):
             self._breeding_cache = None
             self._prev_parent_keys = {}
         self._current_save = path
+        _set_last_save(path)
         if self._room_optimizer_view is not None:
             self._room_optimizer_view.set_save_path(path, refresh_existing=False)
         if self._perfect_planner_view is not None:
@@ -3861,6 +3870,10 @@ class MainWindow(QMainWindow):
             self._trait_ratings.save()
 
     def closeEvent(self, event):
+        try:
+            _save_window_geometry(self.saveGeometry().toBase64().data().decode("ascii"))
+        except Exception:
+            pass
         self._flush_persistent_view_state()
         # Stop background workers so they don't fire signals into a
         # half-destroyed widget tree during shutdown.
