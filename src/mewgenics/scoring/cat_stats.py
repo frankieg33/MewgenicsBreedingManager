@@ -33,26 +33,37 @@ def get_mutation_stat_bonuses(cat) -> dict[str, int]:
     return bonuses
 
 
+def get_class_stat_bonuses(cat) -> dict[str, int]:
+    """Return {stat_name: delta} from the cat's class stat modifiers, or empty dict."""
+    return getattr(cat, 'class_stat_mods', None) or {}
+
+
 def get_cat_stats(cat, use_current: bool, add_mutation_stats: bool = False) -> dict[str, int]:
     """Return the stat dict to use for scoring.
 
-    use_current=True  -> total_stats (base + modifiers/injuries)
-    use_current=False -> base_stats
-    add_mutation_stats -> parse mutation detail fields and add on top
+    use_current=True  -> total_stats (base + modifiers/injuries), plus class
+                         stat modifiers always applied on top (the game shows
+                         these in the house management screen).
+    use_current=False -> base_stats (genetic base only, no class mods)
+    add_mutation_stats -> parse visual-mutation detail fields and add on top.
     """
     if use_current:
         source = getattr(cat, 'total_stats', None) or getattr(cat, 'base_stats', {}) or {}
     else:
         source = getattr(cat, 'base_stats', {}) or {}
 
-    if not add_mutation_stats:
-        return source
+    all_bonuses: dict[str, int] = {}
+    if use_current:
+        for stat, delta in get_class_stat_bonuses(cat).items():
+            all_bonuses[stat] = all_bonuses.get(stat, 0) + delta
+    if add_mutation_stats:
+        for stat, delta in get_mutation_stat_bonuses(cat).items():
+            all_bonuses[stat] = all_bonuses.get(stat, 0) + delta
 
-    bonuses = get_mutation_stat_bonuses(cat)
-    if not bonuses:
+    if not all_bonuses:
         return source
     result = dict(source)
-    for stat, delta in bonuses.items():
+    for stat, delta in all_bonuses.items():
         if stat in result:
             result[stat] = result[stat] + delta
     return result

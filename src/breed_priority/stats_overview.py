@@ -6,8 +6,6 @@ Opens as a non-blocking window from the Breed Priority top bar.
 Only alive cats are shown (status != "Gone").
 """
 
-import re
-
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QHeaderView, QAbstractItemView, QPushButton, QCheckBox, QWidget,
@@ -16,6 +14,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 
 from save_parser import STAT_NAMES as _PARSER_STAT_NAMES
+
+# Canonical stat-resolution helpers — see mewgenics/scoring/cat_stats.py.
+# Re-exported for backwards compatibility with earlier breed_priority imports.
+from mewgenics.scoring.cat_stats import (  # noqa: F401
+    get_cat_stats,
+    get_mutation_stat_bonuses,
+    get_class_stat_bonuses,
+)
 
 from .styles import (
     ACTION_BUTTON_SECONDARY_LARGE_STYLE, checkbox_style, PRIORITY_TABLE_STYLE,
@@ -34,77 +40,6 @@ _STAT_COLOR = {
     7: CLR_DESIRABLE,
     6: CLR_NEUTRAL,
 }
-
-
-# Matches "+2 STR" or "-1 DEX" in mutation detail strings.
-_MUT_STAT_RE = re.compile(r'([+-]?\d+)\s+(STR|CON|INT|DEX|SPD|LCK|CHA)')
-
-
-def get_mutation_stat_bonuses(cat) -> dict:
-    """Return {stat_name: total_delta} summed across all visual mutation entries.
-
-    Parses the 'detail' field on each entry (e.g. "+2 STR, -1 DEX").
-    Each unique mutation_id is counted only once — the game applies a mutation's
-    stat bonus once regardless of how many body-part slots share the same ID
-    (e.g. the same eyebrow mutation on left and right eyebrow counts once).
-    Entries with no parseable stat effects contribute nothing.
-    """
-    bonuses: dict[str, int] = {}
-    seen_ids: set[int] = set()
-    for entry in getattr(cat, 'visual_mutation_entries', []) or []:
-        mutation_id = entry.get('mutation_id')
-        if mutation_id in seen_ids:
-            continue
-        seen_ids.add(mutation_id)
-        detail = entry.get('detail', '') or ''
-        for match in _MUT_STAT_RE.finditer(detail):
-            delta = int(match.group(1))
-            stat  = match.group(2)
-            bonuses[stat] = bonuses.get(stat, 0) + delta
-    return bonuses
-
-
-def get_class_stat_bonuses(cat) -> dict[str, int]:
-    """Return {stat_name: delta} from the cat's class stat modifiers, or empty dict."""
-    return getattr(cat, 'class_stat_mods', None) or {}
-
-
-def get_cat_stats(cat, use_current: bool, add_mutation_stats: bool = False) -> dict:
-    """Return the stat dict to use for scoring/display.
-
-    use_current=True  → total_stats (base + all modifiers/injuries + class bonuses)
-    use_current=False → base_stats (genetic base values only)
-
-    add_mutation_stats=True adds parsed mutation stat bonuses on top of
-    whichever source is selected.  Falls back to base_stats if total_stats
-    is unavailable.
-
-    Class stat modifiers are always included when use_current=True, since the
-    game applies them to all stats displayed on the house management screen.
-    """
-    if use_current:
-        source = getattr(cat, 'total_stats', None) or getattr(cat, 'base_stats', {}) or {}
-    else:
-        source = getattr(cat, 'base_stats', {}) or {}
-
-    # Collect all bonus sources that apply
-    all_bonuses: dict[str, int] = {}
-
-    if use_current:
-        for stat, delta in get_class_stat_bonuses(cat).items():
-            all_bonuses[stat] = all_bonuses.get(stat, 0) + delta
-
-    if add_mutation_stats:
-        for stat, delta in get_mutation_stat_bonuses(cat).items():
-            all_bonuses[stat] = all_bonuses.get(stat, 0) + delta
-
-    if not all_bonuses:
-        return source
-    result = dict(source)
-    for stat, delta in all_bonuses.items():
-        if stat in result:
-            result[stat] = result[stat] + delta
-    return result
 
 _COL_NAME = 0
 _COL_LOC  = 1

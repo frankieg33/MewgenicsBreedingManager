@@ -1,6 +1,9 @@
-"""Automatic scoring — weights, tiers, and main scoring function.
+"""Breed-priority scoring — weights, tiers, and main scoring function.
 
-Pure Python — no Qt dependencies. Ported from byronaltice's breed_priority/scoring.py.
+Pure Python — no Qt dependencies. Canonical home for the scoring engine
+shared by Simple Scoring (views/manual_scoring.py) and Detailed Scoring
+(src/breed_priority/). `breed_priority/scoring.py` is a thin shim that
+re-exports from this module while preserving its own UI-layer constants.
 """
 
 from __future__ import annotations
@@ -200,6 +203,11 @@ def ability_base(name: str) -> str:
     return name
 
 
+def is_upgraded(name: str) -> bool:
+    """Return True if the ability name indicates a tier-2 upgrade (trailing '2')."""
+    return len(name) > 1 and name[-1] == "2"
+
+
 # ── Main scoring function ────────────────────────────────────────────────────
 
 def precompute_scope_data(
@@ -266,6 +274,7 @@ def compute_breed_priority_score(
     can_breed_fn=None,
     _precomputed: dict | None = None,
     should_cancel=None,
+    stat_sum_mode: str = "percentile",
 ) -> ScoreResult:
     """Compute breed priority score for an individual cat.
 
@@ -285,6 +294,8 @@ def compute_breed_priority_score(
         add_mutation_stats: Add mutation stat bonuses on top.
         can_breed_fn: Callable(cat, cat) -> (bool, list). Defaults to can_breed.
         _precomputed: Output of precompute_scope_data() for O(1) lookups.
+        stat_sum_mode: "percentile" (default, tiered 90/75/50 cutoffs) or
+            "rank" (linear rank among unique scope sums, used by Detailed Scoring).
     """
     _w = weights if weights is not None else BREED_PRIORITY_WEIGHTS
     _display = mutation_display_name or (lambda n: n)
@@ -379,13 +390,21 @@ def compute_breed_priority_score(
             breakdown.append((label, float(w)))
             subtotals["stat_7"] += float(w)
 
-    # ── 7-count bonus ─────────────────────────────────────────────────────
+    # ── Stat-count bonus ──────────────────────────────────────────────────
+    # Flat bonus per stat at or above `stat_count_threshold` (default 7 = count
+    # of max stats). Threshold is configurable; kept as the `stat_count_threshold`
+    # weight key for compatibility with Detailed Scoring's weight editor.
     _w_7ct = _w.get("stat_7_count", 0.0)
     if _w_7ct != 0.0:
-        _n_sevens = sum(1 for sn in stat_names if _cat_stats.get(sn) == 7)
-        if _n_sevens > 0:
-            _7ct_pts = round(_w_7ct * _n_sevens, 3)
-            breakdown.append((f"{_n_sevens} stat{'s' if _n_sevens != 1 else ''} at 7", _7ct_pts))
+        _stat_cnt_thr = int(round(_w.get("stat_count_threshold", 7.0)))
+        _n_above_thr = sum(1 for sn in stat_names if _cat_stats.get(sn, 0) >= _stat_cnt_thr)
+        if _n_above_thr > 0:
+            _7ct_pts = round(_w_7ct * _n_above_thr, 3)
+            _plural = "s" if _n_above_thr != 1 else ""
+            _label = (f"{_n_above_thr} stat{_plural} at 7"
+                      if _stat_cnt_thr == 7
+                      else f"{_n_above_thr} stat{_plural} at ≥{_stat_cnt_thr}")
+            breakdown.append((_label, _7ct_pts))
             subtotals["stat_7_count"] = _7ct_pts
 
     # ── Trait scoring ─────────────────────────────────────────────────────
@@ -498,24 +517,44 @@ def compute_breed_priority_score(
                 breakdown.append((f"Genetic safety (R{int(_gene_risk_display)} \u2264 {_gene_threshold:.0f})", safe_pts))
                 subtotals["zero_risk_bonus"] = safe_pts
 
-    # ── Stat sum percentile ───────────────────────────────────────────────
+    # ── Stat sum scoring ──────────────────────────────────────────────────
+    # Two modes:
+    #   "percentile" — tiered (top 10%/25%/50% → w / w-1 / w-2, else 0)
+    #   "rank"       — linear scaling over unique scope sums (0..w). Prevents
+    #                   outliers from compressing the rest of the gradient.
     w_sum = _w.get("stat_sum", 0.0)
     if w_sum != 0 and scope_stat_sums:
         cat_sum = sum(_cat_stats.values())
-        n_sums = len(scope_stat_sums)
-        rank = sum(1 for v in scope_stat_sums if v <= cat_sum)
-        pct = rank / n_sums * 100
-        if pct >= 90:
-            pts = w_sum
-        elif pct >= 75:
-            pts = max(0.0, w_sum - 1)
-        elif pct >= 50:
-            pts = max(0.0, w_sum - 2)
-        else:
-            pts = 0.0
-        if pts:
-            breakdown.append((f"Stat sum {cat_sum} ({pct:.0f}th percentile)", pts))
-            subtotals["stat_sum"] = pts
+        if stat_sum_mode == "rank":
+            _unique_sums = sorted(set(scope_stat_sums) | {cat_sum})
+            _n_unique = len(_unique_sums)
+            if _n_unique <= 1:
+                _sum_t = 1.0
+                _sum_rank_idx = 0
+            else:
+                _sum_rank_idx = _unique_sums.index(cat_sum)
+                _sum_t = _sum_rank_idx / (_n_unique - 1)
+            pts = round(w_sum * _sum_t, 3)
+            if pts:
+                breakdown.append(
+                    (f"Stat sum {cat_sum} (rank {_sum_rank_idx + 1}/{_n_unique})", pts)
+                )
+                subtotals["stat_sum"] = pts
+        else:  # "percentile" (default)
+            n_sums = len(scope_stat_sums)
+            rank = sum(1 for v in scope_stat_sums if v <= cat_sum)
+            pct = rank / n_sums * 100
+            if pct >= 90:
+                pts = w_sum
+            elif pct >= 75:
+                pts = max(0.0, w_sum - 1)
+            elif pct >= 50:
+                pts = max(0.0, w_sum - 2)
+            else:
+                pts = 0.0
+            if pts:
+                breakdown.append((f"Stat sum {cat_sum} ({pct:.0f}th percentile)", pts))
+                subtotals["stat_sum"] = pts
 
     # ── Age penalty ───────────────────────────────────────────────────────
     w_age = _w.get("age_penalty", 0.0)
