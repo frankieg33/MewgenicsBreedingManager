@@ -575,7 +575,7 @@ class FilterDialog(QDialog):
     def __init__(self, parent, initial_state: FilterState,
                  available_rooms: list | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Detailed Priority — Filters")
+        self.setWindowTitle("Detailed Scoring — Filters")
         self.setModal(True)
         self.setStyleSheet(_DLG_STYLE)
         self.resize(460, 620)

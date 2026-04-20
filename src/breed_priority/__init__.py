@@ -874,7 +874,7 @@ class BreedPriorityView(QWidget):
         hb = QHBoxLayout(top_bar)
         hb.setContentsMargins(14, 0, 14, 0)
         hb.setSpacing(12)
-        title_lbl = QLabel("Detailed Priority")
+        title_lbl = QLabel("Detailed Scoring")
         title_lbl.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:16px; font-weight:bold;")
         hb.addWidget(title_lbl)
 
