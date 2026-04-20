@@ -255,6 +255,8 @@ class BreedPriorityView(QWidget):
         self._col_widths: dict[str, dict[int, int]] = {}  # {mode_name: {col_idx: width}}
         self._bottom_pane_sizes: list[int] = []          # ABILITIES|MUTATIONS|CHILDREN|RISKS widths
         self._trait_col_widths: dict[int, int] = {}      # {col_idx: width} shared by both trait tables
+        self._main_splitter_sizes: list[int] = []        # [left_panel_width, right_side_width]
+        self._vert_splitter_sizes: list[int] = []        # [score_table_height, trait_section_height]
         self._active_profile: int = 1   # currently selected profile slot
         self._loaded_profile: int = 1   # which profile's data is in memory
         self._profiles: dict = {}       # {int: dict} explicitly saved profile blobs
@@ -417,6 +419,22 @@ class BreedPriorityView(QWidget):
         except Exception:
             pass
 
+        # ── Main splitter sizes (left panel vs right side) ──
+        try:
+            _ms = data.get("main_splitter_sizes", [])
+            if isinstance(_ms, list) and len(_ms) == 2 and all(isinstance(x, int) and x >= 0 for x in _ms):
+                self._main_splitter_sizes = list(_ms)
+        except Exception:
+            pass
+
+        # ── Vertical splitter sizes (score table vs trait section) ──
+        try:
+            _vs = data.get("vert_splitter_sizes", [])
+            if isinstance(_vs, list) and len(_vs) == 2 and all(isinstance(x, int) and x >= 0 for x in _vs):
+                self._vert_splitter_sizes = list(_vs)
+        except Exception:
+            pass
+
     def _profiles_safe(self) -> dict:
         """Return self._profiles, but if it's empty and the on-disk file already
         has profiles, return those instead.
@@ -473,6 +491,12 @@ class BreedPriorityView(QWidget):
                 list(self._bottom_hs.sizes()) if hasattr(self, "_bottom_hs") else []
             ),
             "trait_col_widths": {str(k): v for k, v in self._trait_col_widths.items()},
+            "main_splitter_sizes": (
+                list(self._main_hs.sizes()) if hasattr(self, "_main_hs") else list(self._main_splitter_sizes)
+            ),
+            "vert_splitter_sizes": (
+                list(self._right_vs.sizes()) if hasattr(self, "_right_vs") else list(self._vert_splitter_sizes)
+            ),
             # Profile slots (separate from working state)
             "active_profile": self._active_profile,
             "loaded_profile": self._loaded_profile,
@@ -1398,6 +1422,7 @@ class BreedPriorityView(QWidget):
 
         hs = CollapseSplitter(Qt.Horizontal)
         hs.setHandleWidth(14)
+        self._main_hs = hs
         vb.addWidget(hs)
 
         # Left: scope + weights panel (scrollable for short displays)
@@ -1428,18 +1453,23 @@ class BreedPriorityView(QWidget):
         vs = QSplitter(Qt.Vertical)
         vs.setHandleWidth(6)
         vs.setStyleSheet(SPLITTER_V_STYLE)
+        self._right_vs = vs
         hs.addWidget(vs)
         hs.setCollapsible(0, True)
         hs.setCollapsible(1, False)
         hs.setStretchFactor(0, 0)
         hs.setStretchFactor(1, 1)
-        hs.setSizes([LEFT_PANEL_W, 10000])
+        hs.setSizes(self._main_splitter_sizes or [LEFT_PANEL_W, 10000])
 
         vs.addWidget(self._build_score_table_section())
         vs.addWidget(self._build_trait_section())
-        vs.setSizes([500, 220])
+        vs.setSizes(self._vert_splitter_sizes or [500, 220])
         vs.setStretchFactor(0, 1)
         vs.setStretchFactor(1, 0)
+
+        # Persist splitter drags (debounced via _col_save_timer)
+        hs.splitterMoved.connect(lambda *_: self._col_save_timer.start())
+        vs.splitterMoved.connect(lambda *_: self._col_save_timer.start())
 
         # Final pass: sync banner/button state now that all widgets exist
         self._update_filter_btn()
