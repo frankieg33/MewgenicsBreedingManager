@@ -95,6 +95,7 @@ Produces a standalone executable via PyInstaller.
 
 - Save parsing research based on [pzx521521/mewgenics-save-editor](https://github.com/pzx521521/mewgenics-save-editor)
 - Community reverse-engineering help from players and mod users
+- **Detailed Scoring view** — concept and implementation by [Byron Altice](https://github.com/byronaltice) (ported from his fork)
 - PR contributors: [0demongamer0](https://github.com/0demongamer0), [An-on-im](https://github.com/An-on-im), [byronaltice](https://github.com/byronaltice), [heartskingu](https://github.com/heartskingu), [ICaxapl](https://github.com/ICaxapl), [luisMolina95](https://github.com/luisMolina95), [TheMegax](https://github.com/TheMegax)
 - Simulated annealing (SA) idea from [PurpleMyst](https://github.com/PurpleMyst/mewgenics_breeding_helper)
 - Original idea and reference from frankieg33

@@ -780,6 +780,11 @@ class AboutDialog(QDialog):
                 <li><b>PySide6:</b> {pyside_version}</li>
               </ul>
               <p><a href="https://github.com/frankieg33/MewgenicsBreedingManager">Project on GitHub</a></p>
+              <hr style="border:none; border-top:1px solid #26264a; margin:8px 0;">
+              <p><b>Credits</b></p>
+              <ul>
+                <li><b>Detailed Scoring</b> — concept and implementation by <a href="https://github.com/byronaltice">Byron Altice</a>.</li>
+              </ul>
             </div>
             """
         )
