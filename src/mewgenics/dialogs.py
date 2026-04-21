@@ -815,10 +815,11 @@ class WhatsNewDialog(QDialog):
         )
 
         default_highlights = highlights or [
-            "Thread safety: eliminated data race between room refresh and breeding cache worker; all workers now respond to interruption requests.",
-            "Crash fix: proper QThread worker lifecycle with double-retirement guard prevents zombie thread accumulation.",
-            "Icon improvements: gradient colors preserved in table view; consistent 72px icons with word-wrapping labels (#90).",
-            "Cat profile sprites now show the full cat without cropping ears or chin.",
+            "New Detailed Scoring view (credit Byron Altice) — weighted breed-priority ranker with profiles, complex custom weights, filter dialog, heatmap column coloring, and a stats overview popup.",
+            "Cat Scoring sidebar section: Simple Scoring (formerly Manual Scoring) and Detailed Scoring. Automatic Scoring view retired in favor of Detailed Scoring.",
+            "Scoring engine consolidated — Detailed Scoring shares the same canonical engine as Simple Scoring, with the (group_key, mutation_id) dedupe fix and class stat modifiers folded in.",
+            "Auto-loads your most recently used save on startup and restores window geometry, splitter sizes, column widths, and all Detailed Scoring preferences across sessions.",
+            "Fork merges: defect detection via GON data, distinct mutation variants as separate traits, and a nav fix for back/forward into the scoring views.",
         ]
 
         root = QVBoxLayout(self)

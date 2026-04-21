@@ -102,6 +102,17 @@ Produces a standalone executable via PyInstaller.
 
 ## Release Notes
 
+### v5.8.0
+
+Detailed Scoring view — ported and consolidated from the [byronaltice fork](https://github.com/byronaltice/MewgenicsBreedingManager).
+
+- **New Detailed Scoring view** (concept and implementation by [Byron Altice](https://github.com/byronaltice)): weighted breed-priority ranker with 5-slot profiles, per-cat custom Complex Weights rules, a filter dialog, heatmap column coloring, and a current-stats overview popup.
+- **Cat Scoring section** in the sidebar: **Simple Scoring** (was Manual Scoring) and **Detailed Scoring**. The previous Automatic Scoring view has been retired — Detailed Scoring supersedes it.
+- **Consolidated scoring engine**: Detailed Scoring and Simple Scoring now share `src/mewgenics/scoring/engine.py`. Ports forward the `(group_key, mutation_id)` mutation-bonus dedupe fix and folds class stat modifiers into current-stat readouts.
+- **Session persistence**: auto-loads your most recently used save on startup; restores window geometry, splitter sizes, table column widths, and all Detailed Scoring preferences (active profile, weights, Complex Weights, filters, scope, toggles, sort).
+- **Fork back-ports**: defect detection via GON block data, distinct mutation stat variants surfaced as separate traits, and a latent nav bug fix so back/forward now correctly returns to Simple/Detailed Scoring.
+- **Performance**: Detailed Scoring runs computation on a background thread and defers recompute while hidden.
+
 ### v5.7.9
 
 - Guarded `auto_scoring` worker retirement disconnect against already-disconnected or destroyed C++ object state
