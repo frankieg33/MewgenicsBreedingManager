@@ -226,7 +226,7 @@ class _ConditionRow(QWidget):
             btn.clicked.connect(self._open_trait_picker)
             self._trait_label = QLabel("(none)")
             self._trait_label.setStyleSheet(
-                f"color:{CLR_TEXT_LABEL_COUNT}; font-size:10px;"
+                f"color:{CLR_TEXT_LABEL_COUNT}; font-size:12px;"
             )
             self._val_layout.addWidget(btn)
             self._val_layout.addWidget(self._trait_label)
@@ -486,7 +486,7 @@ class ComplexWeightsDialog(QDialog):
         # Header
         hdr = QLabel("Complex Weights")
         hdr.setStyleSheet(
-            f"color:{CLR_TEXT_CONTENT_PRIMARY}; font-size:14px; font-weight:bold;"
+            f"color:{CLR_TEXT_CONTENT_PRIMARY}; font-size:16px; font-weight:bold;"
         )
         vb.addWidget(hdr)
 
@@ -494,7 +494,7 @@ class ComplexWeightsDialog(QDialog):
             "Each Complex Weight adds a score delta when its conditions match. "
             "Enabled weights create a new column in the scoring table."
         )
-        hint.setStyleSheet(f"color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:10px;")
+        hint.setStyleSheet(f"color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:12px;")
         hint.setWordWrap(True)
         vb.addWidget(hint)
 
@@ -532,7 +532,7 @@ class ComplexWeightsDialog(QDialog):
 
         if not self._cws:
             empty_lbl = QLabel("No complex weights yet. Click '+ Add' to create one.")
-            empty_lbl.setStyleSheet(f"color:{CLR_TEXT_LABEL_COUNT}; font-size:10px;")
+            empty_lbl.setStyleSheet(f"color:{CLR_TEXT_LABEL_COUNT}; font-size:12px;")
             empty_lbl.setAlignment(Qt.AlignCenter)
             self._list_vb.addWidget(empty_lbl)
         else:

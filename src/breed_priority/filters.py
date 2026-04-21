@@ -31,14 +31,14 @@ _OP_OPTIONS = ["Less Than", "Equals", "Greater Than"]
 # ── Styles ────────────────────────────────────────────────────────────────────
 _DLG_STYLE    = f"background:{CLR_SURFACE_APP_MAIN}; color:{CLR_TEXT_CONTENT_PRIMARY};"
 _SCROLL_STYLE = f"QScrollArea {{ background:{CLR_SURFACE_APP_MAIN}; border:none; }} QWidget {{ background:{CLR_SURFACE_APP_MAIN}; }}"
-_SECTION_LBL  = f"color:{CLR_TEXT_LABEL_COUNT}; font-size:9px; font-weight:bold; letter-spacing:1px; margin-top:2px;"
-_ROW_LBL_ON   = f"color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:11px;"
-_ROW_LBL_OFF  = f"color:{CLR_TEXT_CONTENT_MUTED}; font-size:11px;"
+_SECTION_LBL  = f"color:{CLR_TEXT_LABEL_COUNT}; font-size:11px; font-weight:bold; letter-spacing:1px; margin-top:2px;"
+_ROW_LBL_ON   = f"color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:13px;"
+_ROW_LBL_OFF  = f"color:{CLR_TEXT_CONTENT_MUTED}; font-size:13px;"
 _BTN_STYLE = ACTION_BUTTON_SECONDARY_LARGE_STYLE  # dialog-level inactive button
 _APPLY_BTN_STYLE = ACTION_BUTTON_PRIMARY_LARGE_STYLE  # dialog-level confirm/apply button
 _COMBO_STYLE = (
     f"QComboBox {{ background:{CLR_SURFACE_APP_ALT}; color:{CLR_TEXT_CONTENT_SECONDARY}; border:1px solid {CLR_SURFACE_SEPARATOR};"
-    " padding:1px 4px; font-size:11px; }"
+    " padding:1px 4px; font-size:13px; }"
     "QComboBox::drop-down { border:none; }"
     f"QComboBox QAbstractItemView {{ background:{CLR_SURFACE_APP_ALT}; color:{CLR_TEXT_CONTENT_SECONDARY};"
     f" selection-background-color:#1e3060; border:1px solid {CLR_SURFACE_SEPARATOR}; }}"
@@ -275,12 +275,12 @@ class _FilterSpin(QWidget):
 
     _BTN = (
         f"QPushButton {{ color:{CLR_TEXT_CONTENT_SECONDARY}; background:#3a3a60; border:1px solid #4a4a80;"
-        " font-size:8px; padding:0; }"
+        " font-size:10px; padding:0; }"
         "QPushButton:hover { background:#5050a0; }"
         "QPushButton:pressed { background:#6060c0; }"
     )
     _EDIT = (
-        f"QLineEdit {{ color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:10px; background:{CLR_SURFACE_APP_ALT};"
+        f"QLineEdit {{ color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:12px; background:{CLR_SURFACE_APP_ALT};"
         f" border:1px solid {CLR_SURFACE_SEPARATOR}; border-right:none; padding:0 2px; }}"
         "QLineEdit:focus { border-color:#3a3a7a; }"
     )
@@ -602,7 +602,7 @@ class FilterDialog(QDialog):
         hh = QHBoxLayout(hdr)
         hh.setContentsMargins(14, 0, 14, 0)
         title = QLabel("Filters")
-        title.setStyleSheet(f"color:{CLR_TEXT_CONTENT_PRIMARY}; font-size:14px; font-weight:bold;")
+        title.setStyleSheet(f"color:{CLR_TEXT_CONTENT_PRIMARY}; font-size:16px; font-weight:bold;")
         hh.addWidget(title)
         hh.addStretch()
         reset_btn = QPushButton("Reset All")

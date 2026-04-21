@@ -148,7 +148,7 @@ class StatsOverviewDialog(QDialog):
 
         title = QLabel("Current Stats Overview")
         title.setStyleSheet(
-            f"color:{CLR_TEXT_PRIMARY}; font-size:14px; font-weight:bold;"
+            f"color:{CLR_TEXT_PRIMARY}; font-size:16px; font-weight:bold;"
         )
         hdr_l.addWidget(title)
         hdr_l.addStretch()
@@ -200,7 +200,7 @@ class StatsOverviewDialog(QDialog):
 
         # ── Footer ──────────────────────────────────────────────────────────────
         self._note = QLabel("")
-        self._note.setStyleSheet(f"color:{CLR_TEXT_MUTED}; font-size:10px;")
+        self._note.setStyleSheet(f"color:{CLR_TEXT_MUTED}; font-size:12px;")
         vb.addWidget(self._note)
 
         close_btn = QPushButton("Close")

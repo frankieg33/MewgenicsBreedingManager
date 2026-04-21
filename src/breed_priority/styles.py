@@ -50,7 +50,7 @@ SPLITTER_H_STYLE = (
 SEGMENTED_CONTROL_BUTTON_STYLE = """
     QPushButton {{
         color: {fg_dim}; background: {bg_dim}; border: 1px solid #333;
-        padding: 1px 7px; font-size: 10px; border-radius: 0px;
+        padding: 1px 7px; font-size: 12px; border-radius: 0px;
     }}
     QPushButton:checked {{
         color: {sel_fg}; background: {sel_bg}; border-color: {sel_border};
@@ -63,7 +63,7 @@ SEGMENTED_CONTROL_BUTTON_STYLE = """
 # ── Label styles ──────────────────────────────────────────────────────────────
 
 GROUP_LABEL_TEXT_STYLE = (
-    f"color:{CLR_TEXT_LABEL_GROUP}; font-size:10px; font-weight:bold; letter-spacing:1px;"
+    f"color:{CLR_TEXT_LABEL_GROUP}; font-size:12px; font-weight:bold; letter-spacing:1px;"
 )
 
 # ── Action button styles ──────────────────────────────────────────────────────
@@ -71,45 +71,45 @@ GROUP_LABEL_TEXT_STYLE = (
 ACTION_BUTTON_PRIMARY_EMPHASIS_STYLE = (
     f"QPushButton {{ background:{CLR_INTERACTIVE_BG}; color:{CLR_INTERACTIVE};"
     f" border:1px solid {CLR_INTERACTIVE};"
-    " border-radius:4px; padding:3px 4px; font-size:10px; font-weight:bold; }"
+    " border-radius:4px; padding:3px 4px; font-size:12px; font-weight:bold; }"
     f"QPushButton:hover {{ background:{CLR_INTERACTIVE_BDR}; color:{CLR_INTERACTIVE_HOV}; }}"
 )
 ACTION_BUTTON_PRIMARY_STYLE = (
     f"QPushButton {{ background:{CLR_INTERACTIVE_BG}; color:{CLR_INTERACTIVE};"
     f" border:1px solid {CLR_INTERACTIVE_BDR};"
-    " border-radius:4px; padding:3px 4px; font-size:10px; font-weight:bold; }"
+    " border-radius:4px; padding:3px 4px; font-size:12px; font-weight:bold; }"
     f"QPushButton:hover {{ background:{CLR_INTERACTIVE_BDR}; color:{CLR_INTERACTIVE_HOV}; }}"
 )
 ACTION_BUTTON_PRIMARY_COMPACT_STYLE = (
     f"QPushButton {{ background:{CLR_INTERACTIVE_BG}; color:{CLR_INTERACTIVE};"
     f" border:1px solid {CLR_INTERACTIVE_BDR};"
-    " border-radius:2px; padding:0 2px; font-size:9px; font-weight:bold; }"
+    " border-radius:2px; padding:0 2px; font-size:11px; font-weight:bold; }"
     f"QPushButton:hover {{ background:{CLR_INTERACTIVE_BDR}; }}"
 )
 ACTION_BUTTON_PRIMARY_LARGE_STYLE = (
     f"QPushButton {{ color:#fff; background:{CLR_INTERACTIVE_BG};"
     f" border:1px solid {CLR_INTERACTIVE};"
-    " border-radius:4px; padding:4px 14px; font-size:11px; }"
+    " border-radius:4px; padding:4px 14px; font-size:13px; }"
     f"QPushButton:hover {{ background:{CLR_INTERACTIVE_BDR}; }}"
 )
 ACTION_BUTTON_SECONDARY_STYLE = (
     "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a;"
-    " border-radius:4px; padding:3px 4px; font-size:10px; }"
+    " border-radius:4px; padding:3px 4px; font-size:12px; }"
     f"QPushButton:hover {{ background:{CLR_SURFACE_SEPARATOR}; color:{CLR_TEXT_CONTENT_PRIMARY}; }}"
 )
 ACTION_BUTTON_SECONDARY_LARGE_STYLE = (
     f"QPushButton {{ color:{CLR_TEXT_CONTENT_SECONDARY}; background:#1a1a32; border:1px solid #2a2a4a;"
-    " border-radius:4px; padding:4px 14px; font-size:11px; }"
+    " border-radius:4px; padding:4px 14px; font-size:13px; }"
     f"QPushButton:hover {{ background:{CLR_SURFACE_SEPARATOR}; color:{CLR_TEXT_CONTENT_PRIMARY}; }}"
 )
 TOGGLE_BUTTON_INACTIVE_STYLE = (
     "QPushButton { background:#1a1a2e; color:#555566; border:1px solid #2a2a44;"
-    " border-radius:4px; padding:3px 4px; font-size:10px; }"
+    " border-radius:4px; padding:3px 4px; font-size:12px; }"
     f"QPushButton:hover {{ background:#222238; color:{ColorUtils.blend('#555566', CLR_INTERACTIVE, 0.35)}; }}"
 )
 TOGGLE_BUTTON_INACTIVE_COMPACT_STYLE = (
     "QPushButton { background:#1a1a2e; color:#555566; border:1px solid #2a2a44;"
-    " border-radius:2px; padding:0 2px; font-size:9px; }"
+    " border-radius:2px; padding:0 2px; font-size:11px; }"
     f"QPushButton:hover {{ background:#222238; color:{ColorUtils.blend('#555566', CLR_INTERACTIVE, 0.35)}; }}"
 )
 
@@ -145,7 +145,7 @@ def checkbox_style(
 PRIORITY_TABLE_STYLE = f"""
     QTableWidget {{
         background:{CLR_SURFACE_APP_MAIN}; alternate-background-color:{CLR_SURFACE_APP_ALT};
-        color:{CLR_TEXT_CONTENT_PRIMARY}; border:none; font-size:12px;
+        color:{CLR_TEXT_CONTENT_PRIMARY}; border:none; font-size:14px;
     }}
     QTableWidget::item {{
         padding:3px 4px;
@@ -156,7 +156,7 @@ PRIORITY_TABLE_STYLE = f"""
         background:{CLR_SURFACE_HEADER}; color:{CLR_TEXT_LABEL_UI}; padding:5px 4px;
         border:none; border-bottom:1px solid {CLR_SURFACE_HEADER_BORDER};
         border-right:1px solid {CLR_SURFACE_HEADER};
-        font-size:11px; font-weight:bold;
+        font-size:13px; font-weight:bold;
     }}
     QScrollBar:vertical {{ background:{CLR_SURFACE_APP_MAIN}; width:10px; }}
     QScrollBar::handle:vertical {{
@@ -166,7 +166,7 @@ PRIORITY_TABLE_STYLE = f"""
 
 PRIORITY_COMBO_STYLE = (
     f"QComboBox {{ background:{CLR_SURFACE_APP_ALT}; color:{CLR_TEXT_CONTENT_SECONDARY}; border:1px solid {CLR_SURFACE_SEPARATOR};"
-    " padding:1px 4px; font-size:11px; }"
+    " padding:1px 4px; font-size:13px; }"
     "QComboBox:hover { border-color:#3a3a7a; }"
     "QComboBox::drop-down { border:none; }"
     # No `color` here — item colors come from setForeground() on each model item
@@ -180,7 +180,7 @@ _TRAIT_TAB_BASE = (
     f"QTabWidget::pane {{ border: none; background: {CLR_SURFACE_APP_MAIN}; }}"
     f"QTabBar::tab {{"
     f" background: {CLR_SURFACE_APP_ALT}; color: #888;"
-    f" padding: 3px 10px; font-size: 10px; font-weight: bold; letter-spacing: 0.5px;"
+    f" padding: 3px 10px; font-size: 12px; font-weight: bold; letter-spacing: 0.5px;"
     f" border: 1px solid {CLR_SURFACE_SEPARATOR}; border-bottom: none; margin-right: 2px;"
     f"}}"
     f"QTabBar::tab:selected {{ background: {CLR_SURFACE_APP_MAIN}; color: #ccc; }}"

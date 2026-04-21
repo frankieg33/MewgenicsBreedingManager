@@ -1012,7 +1012,7 @@ class _WeightSpin(QWidget):
 
     _BTN_STYLE = (
         "QPushButton { color:#ccc; background:#3a3a60; border:1px solid #4a4a80;"
-        " font-size:8px; padding:0; }"
+        " font-size:10px; padding:0; }"
         "QPushButton:hover { background:#5050a0; }"
         "QPushButton:pressed { background:#6060c0; }"
     )
@@ -1036,7 +1036,7 @@ class _WeightSpin(QWidget):
         self._lbl.setFixedWidth(36)
         self._lbl.setAlignment(Qt.AlignCenter)
         _f = self._lbl.font()
-        _f.setPointSize(8)
+        _f.setPointSize(10)
         self._lbl.setFont(_f)
         self._update_color()
 
@@ -1161,9 +1161,9 @@ class _ConfirmDialog(QDialog):
         self.setModal(True)
         self.setStyleSheet(
             f"QDialog {{ background:{CLR_SURFACE_APP_MAIN}; }}"
-            f"QLabel  {{ color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:12px; background:transparent; border:none; }}"
+            f"QLabel  {{ color:{CLR_TEXT_CONTENT_SECONDARY}; font-size:14px; background:transparent; border:none; }}"
             "QPushButton { background:#14142e; color:#8899bb; border:1px solid #2a2a55;"
-            "  border-radius:4px; padding:5px 18px; font-size:12px; }"
+            "  border-radius:4px; padding:5px 18px; font-size:14px; }"
             "QPushButton:hover { background:#1c1c3a; color:#ccd; border-color:#4444aa; }"
             "QPushButton#ok { background:#0e2030; color:#88aadd; border-color:#2244aa; }"
             "QPushButton#ok:hover { background:#122840; color:#aaccff; border-color:#3366cc; }"

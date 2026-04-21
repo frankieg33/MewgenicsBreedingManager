@@ -33,7 +33,7 @@ def show_weights_popup(parent, weights: dict) -> None:
     vb.setSpacing(8)
 
     title = QLabel("Detailed Scoring - Weights")
-    title.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:13px; font-weight:bold;")
+    title.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:15px; font-weight:bold;")
     vb.addWidget(title)
 
     table = QTableWidget()

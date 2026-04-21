@@ -74,7 +74,7 @@ def build_profile_bar(
         "QLineEdit {"
         f"  background:{CLR_SURFACE_SCORE_AREA}; color:{CLR_STATE_SELECTED_FG};"
         f"  border:1px solid {CLR_INTERACTIVE_BDR}; border-radius:4px;"
-        "  padding:0 6px; font-size:11px;"
+        "  padding:0 6px; font-size:13px;"
         "}"
         f"QLineEdit:focus {{ border-color:{CLR_INTERACTIVE}; }}"
     )
@@ -90,7 +90,7 @@ def build_profile_bar(
     sel_name_lbl.setFixedWidth(160)
     sel_name_lbl.setStyleSheet(
         f"color:{CLR_TEXT_LABEL_COUNT}; background:{CLR_SURFACE_SCORE_AREA}; border:1px solid {CLR_SURFACE_SEPARATOR};"
-        " border-radius:4px; padding:0 6px; font-size:11px;"
+        " border-radius:4px; padding:0 6px; font-size:13px;"
     )
     sel_name_lbl.setVisible(False)
     nh.addWidget(sel_name_lbl)
@@ -120,7 +120,7 @@ def build_profile_bar(
 
     lbl = QLabel("PROFILES")
     lbl.setStyleSheet(
-        f"color:{CLR_TEXT_LABEL_GROUP}; font-size:10px; font-weight:bold; letter-spacing:2px;"
+        f"color:{CLR_TEXT_LABEL_GROUP}; font-size:12px; font-weight:bold; letter-spacing:2px;"
     )
     hb.addWidget(lbl)
     hb.addSpacing(12)
@@ -139,7 +139,7 @@ def build_profile_bar(
 
     _act_style = (
         "QPushButton { background:#0e1a2e; color:#7799bb; border:1px solid #1a2a44;"
-        "  border-radius:4px; padding:2px 12px; font-size:11px; }"
+        "  border-radius:4px; padding:2px 12px; font-size:13px; }"
         "QPushButton:hover { background:#122236; color:#99bbdd; border-color:#2a4a6a; }"
     )
     load_btn = QPushButton("Load")
@@ -158,7 +158,7 @@ def build_profile_bar(
 
     _del_style = (
         "QPushButton { background:#1a0e0e; color:#885555; border:1px solid #3a1a1a;"
-        "  border-radius:4px; padding:2px 10px; font-size:11px; }"
+        "  border-radius:4px; padding:2px 10px; font-size:13px; }"
         "QPushButton:hover { background:#2a1212; color:#cc7777; border-color:#662222; }"
     )
     delete_btn = QPushButton("Delete")
@@ -170,13 +170,13 @@ def build_profile_bar(
     hb.addSpacing(16)
 
     loaded_lbl = QLabel()
-    loaded_lbl.setStyleSheet(f"color:{CLR_TEXT_LABEL_COUNT}; font-size:11px;")
+    loaded_lbl.setStyleSheet(f"color:{CLR_TEXT_LABEL_COUNT}; font-size:13px;")
     loaded_lbl.setVisible(False)
     hb.addWidget(loaded_lbl)
     hb.addSpacing(8)
 
     dirty_lbl = QLabel("● Modified")
-    dirty_lbl.setStyleSheet("color:#bb8822; font-size:11px;")
+    dirty_lbl.setStyleSheet("color:#bb8822; font-size:13px;")
     dirty_lbl.setVisible(False)
     hb.addWidget(dirty_lbl)
 

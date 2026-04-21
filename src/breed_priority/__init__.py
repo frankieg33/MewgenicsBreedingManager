@@ -874,11 +874,11 @@ class BreedPriorityView(QWidget):
         icon_lbl = QLabel(icon)
         icon_lbl.setFixedWidth(20)
         icon_lbl.setAlignment(Qt.AlignCenter)
-        icon_lbl.setStyleSheet(f"color:{color}; font-size:14px;")
+        icon_lbl.setStyleSheet(f"color:{color}; font-size:16px;")
 
         text_lbl = QLabel(text)
         text_lbl.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        text_lbl.setStyleSheet(f"color:{color}; font-size:12px; font-weight:bold;")
+        text_lbl.setStyleSheet(f"color:{color}; font-size:14px; font-weight:bold;")
 
         hb.addWidget(icon_lbl)
         hb.addWidget(text_lbl)
@@ -897,7 +897,7 @@ class BreedPriorityView(QWidget):
         hb.setContentsMargins(14, 0, 14, 0)
         hb.setSpacing(12)
         title_lbl = QLabel("Detailed Scoring")
-        title_lbl.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:16px; font-weight:bold;")
+        title_lbl.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:17px; font-weight:bold;")
         hb.addWidget(title_lbl)
 
         self._btn_stats_overview = QPushButton("Current Stats…")
@@ -989,7 +989,7 @@ class BreedPriorityView(QWidget):
         _hal.setSpacing(0)
         _hal.setContentsMargins(0, 0, 0, 0)
         self._ha_lbl = QLabel("Heat:")
-        self._ha_lbl.setStyleSheet(f"color:{CLR_LABEL_SUBDUED}; font-size:10px;")
+        self._ha_lbl.setStyleSheet(f"color:{CLR_LABEL_SUBDUED}; font-size:12px;")
         _hal.addWidget(self._ha_lbl)
         _hal.addWidget(self._btn_heat_col)
         _hal.addWidget(self._btn_heat_row)
@@ -1018,7 +1018,7 @@ class BreedPriorityView(QWidget):
         _ac_h.setContentsMargins(0, 0, 0, 0)
         _ac_h.setSpacing(3)
         self._chk_all_cats = QCheckBox("All Cats")
-        self._chk_all_cats.setStyleSheet(f"color:{CLR_TEXT_SECONDARY}; font-size:11px;")
+        self._chk_all_cats.setStyleSheet(f"color:{CLR_TEXT_SECONDARY}; font-size:13px;")
         self._chk_all_cats.setChecked(True)
         self._chk_all_cats.stateChanged.connect(self._on_all_cats_changed)
         _ac_h.addWidget(self._chk_all_cats)
@@ -1030,12 +1030,12 @@ class BreedPriorityView(QWidget):
         for _leg_txt, _leg_clr in (("M", CLR_GENDER_MALE), ("F", CLR_GENDER_FEMALE), ("?", CLR_GENDER_UNKNOWN)):
             _leg = QLabel(_leg_txt)
             _leg.setFixedWidth(32)
-            _leg.setStyleSheet(f"color:{_leg_clr}; font-size:12px; font-weight:bold;")
+            _leg.setStyleSheet(f"color:{_leg_clr}; font-size:14px; font-weight:bold;")
             _leg.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             _ac_h.addWidget(_leg)
         _gen_leg = QLabel("Risk")
         _gen_leg.setFixedWidth(44)
-        _gen_leg.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:12px; font-weight:bold;")
+        _gen_leg.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:14px; font-weight:bold;")
         _gen_leg.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         _ac_h.addWidget(_gen_leg)
         layout.addWidget(_ac_row)
@@ -1155,13 +1155,13 @@ class BreedPriorityView(QWidget):
         _h1 = QLabel("1")
         _h1.setFixedWidth(18)
         _h1.setAlignment(Qt.AlignCenter)
-        _h1.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:10px; font-weight:bold;")
+        _h1.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:12px; font-weight:bold;")
         _mid = QLabel("")
         _mid.setFixedWidth(40)
         _h5 = QLabel("5")
         _h5.setFixedWidth(18)
         _h5.setAlignment(Qt.AlignCenter)
-        _h5.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:10px; font-weight:bold;")
+        _h5.setStyleSheet(f"color:{CLR_TEXT_PRIMARY}; font-size:12px; font-weight:bold;")
         _step_hdr_h.addWidget(_h1)
         _step_hdr_h.addWidget(_mid)
         _step_hdr_h.addWidget(_h5)
@@ -1190,17 +1190,17 @@ class BreedPriorityView(QWidget):
                 _lh.setContentsMargins(0, 0, 0, 0)
                 _lh.setSpacing(2)
                 _grp = QLabel(group_text)
-                _grp.setStyleSheet(f"color:{CLR_TEXT_GROUP}; font-size:10px;")
+                _grp.setStyleSheet(f"color:{CLR_TEXT_GROUP}; font-size:12px;")
                 _lh.addWidget(_grp)
                 _lh.addStretch()
                 _sub = QLabel(sub_text)
-                _sub.setStyleSheet(f"color:{CLR_TEXT_UI_LABEL}; font-size:10px;")
+                _sub.setStyleSheet(f"color:{CLR_TEXT_UI_LABEL}; font-size:12px;")
                 _lh.addWidget(_sub)
             else:
                 is_subitem = label.startswith("  └")
                 lbl = QLabel(label)
                 lbl.setStyleSheet(
-                    f"color:{CLR_TEXT_SUBLABEL}; font-size:10px;" if is_subitem else f"color:{CLR_TEXT_UI_LABEL}; font-size:10px;"
+                    f"color:{CLR_TEXT_SUBLABEL}; font-size:12px;" if is_subitem else f"color:{CLR_TEXT_UI_LABEL}; font-size:12px;"
                 )
             _INT_PARAM_RANGES = {
                 "stat_7_threshold":      (1, 20),
@@ -1555,7 +1555,7 @@ class BreedPriorityView(QWidget):
         hdr.addWidget(self._children_hdr_lbl)
         hdr.addStretch()
         self._children_count_lbl = QLabel("")
-        self._children_count_lbl.setStyleSheet(f"color:{CLR_TEXT_COUNT}; font-size:10px;")
+        self._children_count_lbl.setStyleSheet(f"color:{CLR_TEXT_COUNT}; font-size:12px;")
         self._children_count_lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         hdr.addWidget(self._children_count_lbl)
         vb.addLayout(hdr)
@@ -1563,7 +1563,7 @@ class BreedPriorityView(QWidget):
         # Filter toggle: All | In Scope | Same Room
         _seg_base = (
             f"QPushButton {{ background:{CLR_BG_ALT}; color:{CLR_TEXT_COUNT}; border:1px solid {CLR_SURFACE_SEPARATOR};"
-            " padding:2px 7px; font-size:10px; }"
+            " padding:2px 7px; font-size:12px; }"
             f"QPushButton:hover {{ background:{CLR_BG_PANEL}; color:{CLR_TEXT_SECONDARY}; }}"
             "QPushButton:checked { background:#1e2050; color:#99aaff;"
             " border-color:#3a3a88; }"
@@ -1613,7 +1613,7 @@ class BreedPriorityView(QWidget):
         self._children_list = QListWidget()
         self._children_list.setStyleSheet(
             f"QListWidget {{ background:{CLR_BG_DEEP}; border:1px solid {CLR_BG_HEADER_BDR};"
-            f" color:{CLR_TEXT_SECONDARY}; font-size:11px; outline:none; }}"
+            f" color:{CLR_TEXT_SECONDARY}; font-size:13px; outline:none; }}"
             "QListWidget::item { padding:2px 6px; }"
             f"QListWidget::item:hover {{ background:{CLR_BG_ALT}; }}"
             f"QListWidget::item:selected {{ background:{CLR_SURFACE_SEPARATOR}; }}"
@@ -1676,7 +1676,7 @@ class BreedPriorityView(QWidget):
         hdr.addWidget(self._risk_hdr_lbl)
         hdr.addStretch()
         self._risk_count_lbl = QLabel("")
-        self._risk_count_lbl.setStyleSheet(f"color:{CLR_TEXT_COUNT}; font-size:10px;")
+        self._risk_count_lbl.setStyleSheet(f"color:{CLR_TEXT_COUNT}; font-size:12px;")
         self._risk_count_lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         hdr.addWidget(self._risk_count_lbl)
         vb.addLayout(hdr)
@@ -1684,7 +1684,7 @@ class BreedPriorityView(QWidget):
         self._risk_list = QListWidget()
         self._risk_list.setStyleSheet(
             f"QListWidget {{ background:{CLR_BG_DEEP}; border:1px solid {CLR_BG_HEADER_BDR};"
-            f" color:{CLR_TEXT_SECONDARY}; font-size:11px; outline:none; }}"
+            f" color:{CLR_TEXT_SECONDARY}; font-size:13px; outline:none; }}"
             "QListWidget::item { padding:2px 6px; }"
             f"QListWidget::item:hover {{ background:{CLR_BG_ALT}; }}"
             f"QListWidget::item:selected {{ background:{CLR_SURFACE_SEPARATOR}; }}"
@@ -1853,7 +1853,7 @@ class BreedPriorityView(QWidget):
         _disabled_style = """
             QPushButton {{
                 color: {fg}; background: {bg}; border: 1px solid {border};
-                padding: 1px 7px; font-size: 10px; border-radius: 0px;
+                padding: 1px 7px; font-size: 12px; border-radius: 0px;
             }}
             QPushButton:checked {{
                 color: {fg_checked}; background: {bg_checked}; border-color: {border_checked};
@@ -1870,8 +1870,8 @@ class BreedPriorityView(QWidget):
             _hb.setEnabled(_on)
             _hb.setStyleSheet(SEGMENTED_CONTROL_BUTTON_STYLE if _on else _disabled_style)
         self._ha_lbl.setStyleSheet(
-            f"color:{CLR_LABEL_SUBDUED}; font-size:10px;" if _on
-            else f"color:{CLR_TEXT_COUNT}; font-size:10px;")
+            f"color:{CLR_LABEL_SUBDUED}; font-size:12px;" if _on
+            else f"color:{CLR_TEXT_COUNT}; font-size:12px;")
 
     def _on_heat_algo_changed(self, btn_id: int, checked: bool):
         if not checked:
@@ -2041,7 +2041,7 @@ class BreedPriorityView(QWidget):
             row_h.setSpacing(3)
 
             chk = QCheckBox(self._room_display.get(room, room))
-            chk.setStyleSheet(f"color:{CLR_TEXT_UI_LABEL}; font-size:11px;")
+            chk.setStyleSheet(f"color:{CLR_TEXT_UI_LABEL}; font-size:13px;")
             # If All Cats is on, all room boxes start checked; otherwise restore saved state
             chk.setChecked(_all_cats_on or saved_rooms.get(room, False))
             chk.stateChanged.connect(self._on_room_changed)
@@ -2058,7 +2058,7 @@ class BreedPriorityView(QWidget):
                     _glbl = QLabel(f"{_pct}%")
                     _glbl.setFixedWidth(32)   # fixed width keeps columns vertically aligned
                     _glbl.setStyleSheet(
-                        f"color:{CLR_TEXT_COUNT if _pct == 0 else _gc}; font-size:12px;"
+                        f"color:{CLR_TEXT_COUNT if _pct == 0 else _gc}; font-size:14px;"
                     )
                     _glbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                     row_h.addWidget(_glbl)
@@ -2072,7 +2072,7 @@ class BreedPriorityView(QWidget):
                     _r_color = "#e08030"
                 else:
                     _r_color = CLR_UNDESIRABLE
-                _r_lbl.setStyleSheet(f"color:{_r_color}; font-size:12px;")
+                _r_lbl.setStyleSheet(f"color:{_r_color}; font-size:14px;")
                 _r_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 row_h.addWidget(_r_lbl)
 

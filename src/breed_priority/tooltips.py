@@ -23,10 +23,10 @@ def build_child_tooltip(cat, display_name_fn) -> str:
         display_name_fn: Callable(trait_key) -> str  (e.g. BreedPriorityView._display_name)
     """
     html_parts = [
-        f'<html><body style="font-family:monospace;font-size:11px;margin:0;padding:0;">',
-        f'<b style="color:{CLR_HIGHLIGHT};font-size:12px">{cat.name}</b>'
-        f' <span style="color:#88aacc;font-size:11px">{cat.gender_display}</span>'
-        f' <span style="color:{CLR_TEXT_UI_LABEL};font-size:10px">age {getattr(cat, "age", "?")}</span>',
+        f'<html><body style="font-family:monospace;font-size:13px;margin:0;padding:0;">',
+        f'<b style="color:{CLR_HIGHLIGHT};font-size:14px">{cat.name}</b>'
+        f' <span style="color:#88aacc;font-size:13px">{cat.gender_display}</span>'
+        f' <span style="color:{CLR_TEXT_UI_LABEL};font-size:12px">age {getattr(cat, "age", "?")}</span>',
     ]
     # Stats row
     stats_str = "  ".join(
@@ -34,7 +34,7 @@ def build_child_tooltip(cat, display_name_fn) -> str:
         for sn in _STAT_COL_NAMES
     )
     html_parts.append(
-        f'<br><span style="color:#888;font-size:10px">{stats_str}</span>'
+        f'<br><span style="color:#888;font-size:12px">{stats_str}</span>'
     )
     # Trait sections
     passive_tiers = getattr(cat, 'passive_tiers', {})
@@ -64,7 +64,7 @@ def build_child_tooltip(cat, display_name_fn) -> str:
                 for it in items
             )
             html_parts.append(
-                f'<br><span style="color:{CLR_TEXT_UI_LABEL};font-size:10px">{title}</span>'
+                f'<br><span style="color:{CLR_TEXT_UI_LABEL};font-size:12px">{title}</span>'
                 f'<table cellspacing="0" cellpadding="1">{rows}</table>'
             )
     html_parts.append('</body></html>')
@@ -221,21 +221,21 @@ def build_cat_tooltip(
     total_color = CLR_VALUE_POS if result.total > 0 else CLR_VALUE_NEG if result.total < 0 else CLR_VALUE_NEUTRAL
     _sex = getattr(cat, 'sexuality', 'straight') or 'straight'
     _sex_glyph = (
-        f' <span style="font-size:14px">{_SEX_EMOJI_GAY}</span>' if _sex == 'gay' else
-        f' <span style="font-size:14px">{_SEX_EMOJI_BI}</span>'  if _sex == 'bi'  else
+        f' <span style="font-size:16px">{_SEX_EMOJI_GAY}</span>' if _sex == 'gay' else
+        f' <span style="font-size:16px">{_SEX_EMOJI_BI}</span>'  if _sex == 'bi'  else
         ''
     )
     html_parts = [
-        f'<html><body style="font-family:monospace;font-size:11px;margin:0;padding:0;">',
-        f'<b style="color:{CLR_HIGHLIGHT};font-size:12px">{cat.name}</b>'
+        f'<html><body style="font-family:monospace;font-size:13px;margin:0;padding:0;">',
+        f'<b style="color:{CLR_HIGHLIGHT};font-size:14px">{cat.name}</b>'
         f'{_sex_glyph}'
-        f' <span style="color:#88aacc;font-size:11px">{cat.gender_display}</span>'
-        f' <span style="color:{CLR_TEXT_UI_LABEL};font-size:10px">age {getattr(cat, "age", "?")}</span>',
+        f' <span style="color:#88aacc;font-size:13px">{cat.gender_display}</span>'
+        f' <span style="color:{CLR_TEXT_UI_LABEL};font-size:12px">age {getattr(cat, "age", "?")}</span>',
     ]
     if injury_rows:
-        html_parts.append('<br><span style="color:#cc4444;font-size:10px">INJURIES</span>')
+        html_parts.append('<br><span style="color:#cc4444;font-size:12px">INJURIES</span>')
         html_parts.append('<table cellspacing="0" cellpadding="1">' + "".join(injury_rows) + '</table>')
-    _TT_SECTION = f'<br><span style="color:{CLR_TEXT_UI_LABEL};font-size:10px">'
+    _TT_SECTION = f'<br><span style="color:{CLR_TEXT_UI_LABEL};font-size:12px">'
     if active_rows:
         html_parts.append(f'{_TT_SECTION}ACTIVE ABILITIES</span>')
         html_parts.append('<table cellspacing="0" cellpadding="1">' + "".join(active_rows) + '</table>')

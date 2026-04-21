@@ -585,11 +585,11 @@ class ManualScoringView(QWidget):
         vb.setSpacing(10)
 
         title = QLabel("Simple Scoring")
-        title.setStyleSheet("color:#f0f0ff; font-size:16px; font-weight:bold;")
+        title.setStyleSheet("color:#f0f0ff; font-size:17px; font-weight:bold;")
         vb.addWidget(title)
 
         self._subtitle = QLabel("")
-        self._subtitle.setStyleSheet("color:#667; font-size:11px;")
+        self._subtitle.setStyleSheet("color:#667; font-size:13px;")
         vb.addWidget(self._subtitle)
 
         # --- Profile ---
@@ -751,7 +751,7 @@ class ManualScoringView(QWidget):
         vb.addWidget(self._table, 1)
 
         self._status_label = QLabel("")
-        self._status_label.setStyleSheet("color:#667; font-size:11px;")
+        self._status_label.setStyleSheet("color:#667; font-size:13px;")
         vb.addWidget(self._status_label)
 
         return panel
@@ -761,7 +761,7 @@ class ManualScoringView(QWidget):
     @staticmethod
     def _section_label(text: str) -> QLabel:
         lbl = QLabel(text)
-        lbl.setStyleSheet("color:#8899cc; font-size:12px; font-weight:bold; margin-top:6px;")
+        lbl.setStyleSheet("color:#8899cc; font-size:14px; font-weight:bold; margin-top:6px;")
         return lbl
 
     def _weight_row(self, label: str, default: int) -> tuple[QHBoxLayout, QSpinBox]:
