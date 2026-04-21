@@ -1,10 +1,15 @@
 """QuickRoomRefreshWorker: fast room assignment refresh without full parse."""
+import logging
 import sqlite3
 
 from PySide6.QtCore import QThread, Signal
 
 from save_parser import _get_house_info, _get_adventure_keys
 from mewgenics.utils.retry import retry_transient
+from mewgenics.utils.save_snapshot import snapshot
+
+
+logger = logging.getLogger("mewgenics.room_refresh")
 
 
 class QuickRoomRefreshWorker(QThread):
@@ -28,15 +33,15 @@ class QuickRoomRefreshWorker(QThread):
         self._expected_keys = expected_keys
         self._generation = generation
 
-    def _read_state(self):
-        """Open the save read-only and return (live_keys, house, adv).
+    def _read_state_from(self, src_path: str):
+        """Open `src_path` read-only and return (live_keys, house, adv).
 
         Raises the underlying sqlite3 exception if the file can't be opened
         or queried — retry_transient handles the partial-write window.
         """
         conn = None
         try:
-            conn = sqlite3.connect(f"file:{self._path}?mode=ro", uri=True)
+            conn = sqlite3.connect(f"file:{src_path}?mode=ro", uri=True)
             live_keys = {row[0] for row in conn.execute("SELECT key FROM cats").fetchall()}
             house = _get_house_info(conn)
             adv = _get_adventure_keys(conn)
@@ -55,7 +60,12 @@ class QuickRoomRefreshWorker(QThread):
         try:
             if self.isInterruptionRequested():
                 return
-            live_keys, house, adv = retry_transient(self._read_state)
+            # Snapshot the save to a temp copy first to avoid co-accessing
+            # the live file while the game is running (issue #94).
+            with snapshot(self._path) as snap_path:
+                live_keys, house, adv = retry_transient(
+                    lambda: self._read_state_from(snap_path)
+                )
             if self.isInterruptionRequested():
                 return
             if live_keys != self._expected_keys:
@@ -73,4 +83,5 @@ class QuickRoomRefreshWorker(QThread):
                 return
             self.room_patch.emit(self._generation, patch)
         except Exception:
+            logger.exception("quick room refresh failed; falling back to full reload")
             self.needs_full_reload.emit(self._generation)

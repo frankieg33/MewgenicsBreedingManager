@@ -1048,11 +1048,18 @@ def _read_visual_mutation_entries(table: list[int]) -> list[dict[str, object]]:
             continue
 
         part_label = _VISUAL_MUTATION_PART_LABELS.get(group_key, slot_label)
-        is_defect = (700 <= mutation_id <= 706) or mutation_id == 0xFFFF_FFFE
+        # Sentinel "missing part" is always a defect. Range heuristic
+        # (700–706) is only used as a fallback when the GPAK data for
+        # this mutation does not carry an explicit `tag birth_defect`
+        # marker — GPAK is authoritative otherwise. See issue #93: some
+        # 700-range mutations are normal variants, not defects.
+        is_sentinel_missing = (mutation_id == 0xFFFF_FFFE)
+        is_defect = is_sentinel_missing
         display_name = ""
         detail = ""
         gon_stats = ""
         source = "generic"
+        defect_source = "sentinel" if is_sentinel_missing else "none"
         catalog_name = fallback_names.get((fallback_part, mutation_id))
         gpak_info = _VISUAL_MUT_DATA.get(gpak_category, {}).get(mutation_id)
         # Skip base/default part IDs — real mutations have gpak_info or a
@@ -1068,8 +1075,19 @@ def _read_visual_mutation_entries(table: list[int]) -> list[dict[str, object]]:
             raw_name = _gi[0] if len(_gi) >= 1 else ""
             stat_desc = _gi[1] if len(_gi) >= 2 else ""
             gon_stats = _gi[2] if len(_gi) >= 3 else ""
-            if len(_gi) >= 4 and bool(_gi[3]):
+            if len(_gi) >= 4:
+                # GPAK is authoritative: trust its birth_defect tag.
+                if bool(_gi[3]):
+                    is_defect = True
+                    defect_source = "gpak"
+            elif not is_sentinel_missing and 700 <= mutation_id <= 706:
+                # Legacy 3-tuple GPAK entry — fall back to the range heuristic.
                 is_defect = True
+                defect_source = "range_fallback_gpak3tuple"
+        elif not is_sentinel_missing and 700 <= mutation_id <= 706:
+            # No GPAK data at all — use the range heuristic as a best guess.
+            is_defect = True
+            defect_source = "range_fallback_no_gpak"
             raw_name = str(raw_name).strip()
             detail = str(stat_desc).strip()
             if raw_name and not re.match(r'^Mutation \d+$', raw_name):
@@ -1098,14 +1116,24 @@ def _read_visual_mutation_entries(table: list[int]) -> list[dict[str, object]]:
         display_name = str(display_name).strip() or f"{slot_label} {mutation_id}"
         if logger.isEnabledFor(logging.DEBUG) and (verbose_logs or not _is_synthetic_visual_mutation_name(display_name, part_label, slot_label, mutation_id)):
             logger.debug(
-                "visual mutation slot=%s table_index=%s mutation_id=%s gpak_category=%s source=%s name=%s detail=%s",
+                "visual mutation slot=%s table_index=%s mutation_id=%s gpak_category=%s source=%s defect=%s defect_source=%s name=%s detail=%s",
                 slot_key,
                 table_index,
                 mutation_id,
                 gpak_category,
                 source,
+                is_defect,
+                defect_source,
                 display_name,
                 detail,
+            )
+        if is_defect:
+            # Always log defect detections at INFO so uploaded user logs
+            # show exactly which mutation was flagged and why. Cheap —
+            # most cats have 0–2 defects.
+            logger.info(
+                "defect detected slot=%s mutation_id=%s gpak_category=%s defect_source=%s name=%s",
+                slot_key, mutation_id, gpak_category, defect_source, display_name,
             )
         entries.append({
             "slot_key": slot_key,
