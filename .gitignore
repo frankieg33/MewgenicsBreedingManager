@@ -31,6 +31,17 @@ settings.local.json
 Thumbs.db
 desktop.ini
 
+# Shell/env dotfiles (leak in from WSL home via Google Drive mount)
+.bash_profile
+.bashrc
+.profile
+.zprofile
+.zshrc
+.gitconfig
+.gitmodules
+.ripgreprc
+.mcp.json
+
 # Screenshots / local assets
 # screenshot.png intentionally tracked for README
 
