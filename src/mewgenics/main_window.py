@@ -4183,14 +4183,6 @@ class MainWindow(QMainWindow):
             # rooms/statuses without a full rebuild.
             if changed and self._breeding_cache is not None:
                 self._breeding_cache.refresh_cat_index(self._cats)
-            if changed:
-                self._proxy_model.invalidate()
-                if hasattr(self, "_table") and self._table is not None:
-                    header = self._table.horizontalHeader()
-                    if header is not None:
-                        sort_col = header.sortIndicatorSection()
-                        if sort_col >= 0:
-                            self._table.sortByColumn(sort_col, header.sortIndicatorOrder())
             self._rebuild_room_buttons(self._cats)
             self._refresh_filter_button_counts()
             self._bump_cats_generation()

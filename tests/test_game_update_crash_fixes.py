@@ -502,10 +502,11 @@ class TestQuickRefreshGenerationGuard:
 
         assert reloads == [True]
 
-    def test_current_generation_resets_sorted_model_before_reapplying_sort(self, qt_app):
+    def test_current_generation_emits_layout_change_and_preserves_selection(self, qt_app):
         """A quick room patch applied to an already-sorted roster must
-        reset the source model so Qt drops stale proxy/view indexes
-        before the next header click.
+        signal a layout change (not a full reset) so the proxy refilters
+        and resorts without dropping the user's current selection or
+        crashing on the next header click.
         """
         window = self._bare_window()
         cats = [
@@ -525,6 +526,15 @@ class TestQuickRefreshGenerationGuard:
         window._source_model.load(cats, accessible_cats=set())
         qt_app.processEvents()
 
+        # Select Alpha (the row that won't be filtered out) so we can
+        # confirm selection survives the patch.
+        alpha_proxy_index = window._proxy_model.index(0, main_window_module.COL_NAME)
+        window._table.selectionModel().setCurrentIndex(
+            alpha_proxy_index,
+            window._table.selectionModel().SelectionFlag.ClearAndSelect | window._table.selectionModel().SelectionFlag.Rows,
+        )
+        selected_key_before = cats[window._proxy_model.mapToSource(alpha_proxy_index).row()].db_key
+
         resets = []
         layouts = []
         window._source_model.modelReset.connect(lambda: resets.append(True))
@@ -535,10 +545,17 @@ class TestQuickRefreshGenerationGuard:
         )
         qt_app.processEvents()
 
-        assert resets == [True]
-        assert layouts == []
+        assert resets == []
+        assert layouts == [True]
         assert window._proxy_model.rowCount() == 1
 
+        # Selection survived — current index still points at Alpha.
+        current = window._table.selectionModel().currentIndex()
+        assert current.isValid()
+        selected_key_after = cats[window._proxy_model.mapToSource(current).row()].db_key
+        assert selected_key_after == selected_key_before
+
+        # Sorting after the patch must not crash.
         window._table.sortByColumn(main_window_module.COL_NAME, main_window_module.Qt.DescendingOrder)
         qt_app.processEvents()
         assert window._proxy_model.rowCount() == 1
