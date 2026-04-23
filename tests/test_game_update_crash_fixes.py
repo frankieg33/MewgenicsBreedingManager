@@ -36,7 +36,7 @@ sys.path.insert(0, str(_src_dir))
 sys.path.insert(0, str(_proj_root))
 
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QTableView
 
 from mewgenics.workers.save_loader import SaveLoadWorker
 from mewgenics.workers.room_refresh import QuickRoomRefreshWorker
@@ -376,10 +376,23 @@ class TestQuickRefreshGenerationGuard:
         window._quick_refresh_generation = 5
         window._quick_refresh_worker = object()  # sentinel
         window._cats = [SimpleNamespace(db_key=1, room="Attic", status="In House")]
+        def _apply_room_patch(patch):
+            changed = False
+            for cat in window._cats:
+                entry = patch.get(cat.db_key)
+                if entry is None:
+                    continue
+                room, status = entry
+                if cat.room == room and cat.status == status:
+                    continue
+                cat.room = room
+                cat.status = status
+                changed = True
+            return changed
         # Everything below is only touched in the non-stale branch; we
         # want the stale branch to return before reaching them so these
         # can all be bare stubs / None.
-        window._source_model = SimpleNamespace(layoutChanged=SimpleNamespace(emit=lambda: None))
+        window._source_model = SimpleNamespace(apply_room_patch=_apply_room_patch)
         window._proxy_model = SimpleNamespace(invalidate=lambda: None)
         window._rebuild_room_buttons = lambda cats: None
         window._refresh_filter_button_counts = lambda: None
@@ -399,6 +412,45 @@ class TestQuickRefreshGenerationGuard:
         window._current_save = ""
         window.statusBar = lambda: SimpleNamespace(showMessage=lambda *a, **k: None)
         return window
+
+    @staticmethod
+    def _make_cat(db_key: int, name: str, room: str = "Attic", status: str = "In House"):
+        cat = SimpleNamespace()
+        cat.db_key = db_key
+        cat.name = name
+        cat.status = status
+        cat.room = room
+        cat.gender_display = "M"
+        cat.age = db_key
+        cat.base_stats = {stat: 5 for stat in main_window_module.STAT_NAMES}
+        cat.total_stats = dict(cat.base_stats)
+        cat.is_blacklisted = False
+        cat.must_breed = False
+        cat.is_pinned = False
+        cat.abilities = []
+        cat.passive_abilities = []
+        cat.passive_tiers = {}
+        cat.disorders = []
+        cat.mutations = []
+        cat.defects = []
+        cat.mutation_chip_items = []
+        cat.defect_chip_items = []
+        cat.lovers = []
+        cat.haters = []
+        cat.generation = 0
+        cat.aggression = 0.1
+        cat.libido = 0.2
+        cat.inbredness = 0.0
+        cat.parsed_inbredness = 0.0
+        cat.parent_a = None
+        cat.parent_b = None
+        cat.sexuality = "bi"
+        cat.tags = []
+        cat.uid = db_key
+        cat.death_day = None
+        cat.stat_mods = {}
+        cat.has_adventured = False
+        return cat
 
     def test_stale_generation_is_dropped(self, qt_app):
         window = self._bare_window()
@@ -449,6 +501,47 @@ class TestQuickRefreshGenerationGuard:
             )
 
         assert reloads == [True]
+
+    def test_current_generation_resets_sorted_model_before_reapplying_sort(self, qt_app):
+        """A quick room patch applied to an already-sorted roster must
+        reset the source model so Qt drops stale proxy/view indexes
+        before the next header click.
+        """
+        window = self._bare_window()
+        cats = [
+            self._make_cat(1, "Alpha", room="Attic"),
+            self._make_cat(2, "Bravo", room="Floor1_Large"),
+        ]
+        window._cats = cats
+        window._source_model = main_window_module.CatTableModel()
+        window._proxy_model = main_window_module.RoomFilterModel()
+        window._proxy_model.setSourceModel(window._source_model)
+        window._proxy_model.set_accessible_cats(set())
+        window._proxy_model.set_room(None)
+        window._table = QTableView()
+        window._table.setModel(window._proxy_model)
+        window._table.setSortingEnabled(True)
+        window._table.sortByColumn(main_window_module.COL_NAME, main_window_module.Qt.AscendingOrder)
+        window._source_model.load(cats, accessible_cats=set())
+        qt_app.processEvents()
+
+        resets = []
+        layouts = []
+        window._source_model.modelReset.connect(lambda: resets.append(True))
+        window._source_model.layoutChanged.connect(lambda: layouts.append(True))
+
+        main_window_module.MainWindow._on_room_patch(
+            window, 5, {2: ("", "Gone")}
+        )
+        qt_app.processEvents()
+
+        assert resets == [True]
+        assert layouts == []
+        assert window._proxy_model.rowCount() == 1
+
+        window._table.sortByColumn(main_window_module.COL_NAME, main_window_module.Qt.DescendingOrder)
+        qt_app.processEvents()
+        assert window._proxy_model.rowCount() == 1
 
 
 # ─────────────────────────────────────────────────────────────────────

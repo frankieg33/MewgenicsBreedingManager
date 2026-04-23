@@ -4178,20 +4178,19 @@ class MainWindow(QMainWindow):
             # BreedingCacheWorker is running — the worker snapshots the
             # alive list at construction time and never reads cat.status
             # from the live objects.
-            for cat in self._cats:
-                entry = patch.get(cat.db_key)
-                if entry is not None:
-                    cat.room, cat.status = entry
+            changed = self._source_model.apply_room_patch(patch)
             # Refresh the cache's cat-by-key index so it sees updated
             # rooms/statuses without a full rebuild.
-            if self._breeding_cache is not None:
+            if changed and self._breeding_cache is not None:
                 self._breeding_cache.refresh_cat_index(self._cats)
-            # Lightweight repaint — no model rebuild, no ancestry recompute.
-            # layoutChanged updates cell data but doesn't re-run filterAcceptsRow
-            # in QSortFilterProxyModel, so cats that moved rooms would remain
-            # visible under the old room filter.  invalidate() re-filters + re-sorts.
-            self._source_model.layoutChanged.emit()
-            self._proxy_model.invalidate()
+            if changed:
+                self._proxy_model.invalidate()
+                if hasattr(self, "_table") and self._table is not None:
+                    header = self._table.horizontalHeader()
+                    if header is not None:
+                        sort_col = header.sortIndicatorSection()
+                        if sort_col >= 0:
+                            self._table.sortByColumn(sort_col, header.sortIndicatorOrder())
             self._rebuild_room_buttons(self._cats)
             self._refresh_filter_button_counts()
             self._bump_cats_generation()

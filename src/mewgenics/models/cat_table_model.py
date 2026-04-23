@@ -744,6 +744,42 @@ class CatTableModel(QAbstractTableModel):
                 cat.inbredness = 0.0
         self.endResetModel()
 
+    def apply_room_patch(self, patch: dict[int, tuple[str, str]]) -> bool:
+        """Apply a quick room/status patch via model reset.
+
+        Quick refresh runs while the roster may already be filtered and
+        sorted. Resetting the source model is heavier than a bare
+        layoutChanged, but it is the safest way to force Qt to discard any
+        stale proxy/view indexes before the user interacts with the table
+        again.
+        """
+        if not self._cats or not patch:
+            return False
+
+        changes: list[tuple[Cat, str, str]] = []
+        for cat in self._cats:
+            entry = patch.get(cat.db_key)
+            if entry is None:
+                continue
+            room, status = entry
+            if cat.room == room and cat.status == status:
+                continue
+            changes.append((cat, room, status))
+
+        if not changes:
+            return False
+
+        self.beginResetModel()
+        self._relation_cache.clear()
+        self._compat_cache.clear()
+        try:
+            for cat, room, status in changes:
+                cat.room = room
+                cat.status = status
+        finally:
+            self.endResetModel()
+        return True
+
     def set_focus_cat(self, cat: Optional[Cat]):
         if cat is self._focus_cat:
             return
