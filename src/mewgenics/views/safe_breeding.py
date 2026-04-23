@@ -7,10 +7,11 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QTableWidget, QTableWidgetItem, QStyledItemDelegate,
     QStyle, QStyleOptionViewItem, QAbstractItemView, QHeaderView,
-    QPushButton, QMenu, QToolButton,
+    QPushButton, QMenu, QToolButton, QSpinBox, QDoubleSpinBox,
+    QSplitter,
 )
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QColor, QBrush, QPalette
+from PySide6.QtGui import QColor, QBrush, QPalette, QFont
 
 from save_parser import (
     Cat, STAT_NAMES, can_breed, kinship_coi, risk_percent, shared_ancestor_counts, _ancestor_depths,
@@ -19,7 +20,7 @@ from save_parser import (
 from breeding import score_pair, PairFactors
 from mewgenics.constants import STAT_COLORS
 from mewgenics.models.breeding_cache import BreedingCache
-from mewgenics.utils.localization import _tr
+from mewgenics.utils.localization import _tr, ROOM_DISPLAY
 from mewgenics.utils.abilities import _mutation_display_name, _ability_tip
 from mewgenics.utils.calibration import _trait_label_from_value, _trait_level_color
 from mewgenics.utils.tags import _cat_tags, _make_tag_icon
@@ -28,16 +29,18 @@ from mewgenics.utils.styling import _enforce_min_font_in_widget_tree, _blend_qco
 
 class SafeBreedingView(QWidget):
     """Dedicated view for ranking alive breeding candidates."""
-    _QUALITY_COLUMN_COUNT = 20
+    _QUALITY_COLUMN_COUNT = 21
     _PAIR_JUMP_COL = 0
     _QUALITY_CAT_COL = 1
-    _QUALITY_QUALITY_COL = 2
-    _QUALITY_RISK_COL = 3
+    _QUALITY_ROOM_COL = 2
+    _QUALITY_QUALITY_COL = 3
+    _QUALITY_RISK_COL = 4
     _SAFE_CAT_COL = 1
-    _SAFE_RISK_COL = 2
-    _SAFE_SHARED_COL = 3
-    _SAFE_OUTCOME_COL = 4
-    _QUALITY_STAT_START = 4
+    _SAFE_ROOM_COL = 2
+    _SAFE_RISK_COL = 3
+    _SAFE_SHARED_COL = 4
+    _SAFE_OUTCOME_COL = 5
+    _QUALITY_STAT_START = 5
     _QUALITY_SUM_COL = _QUALITY_STAT_START + len(STAT_NAMES)
     _QUALITY_TRAIT_START = _QUALITY_SUM_COL + 1
     _QUALITY_SHARED_COL = _QUALITY_TRAIT_START + 3
@@ -126,6 +129,74 @@ class SafeBreedingView(QWidget):
             jump_btn.setEnabled(False)
         return jump_btn
 
+    def _build_filters_pane(self) -> QWidget:
+        pane = QWidget()
+        v = QVBoxLayout(pane)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(6)
+
+        title = QLabel("Filters")
+        title.setStyleSheet("color:#666; font-size:10px; font-weight:bold;")
+        v.addWidget(title)
+
+        self._filter_hide_paired_btn = QPushButton("Hide cats already in love")
+        self._filter_hide_paired_btn.setCheckable(True)
+        self._filter_hide_paired_btn.setStyleSheet(
+            "QPushButton { background:#1a1a32; color:#bbb; border:1px solid #2a2a4a;"
+            " border-radius:4px; padding:5px 10px; }"
+            "QPushButton:checked { background:#2a3a5a; color:#fff; border:1px solid #4a6a9a; }"
+        )
+        self._filter_hide_paired_btn.toggled.connect(self._on_filter_changed)
+        v.addWidget(self._filter_hide_paired_btn)
+
+        risk_row = QHBoxLayout()
+        risk_row.setSpacing(6)
+        risk_row.addWidget(QLabel("Max risk %:"))
+        self._filter_max_risk_spin = QSpinBox()
+        self._filter_max_risk_spin.setRange(0, 100)
+        self._filter_max_risk_spin.setValue(100)
+        self._filter_max_risk_spin.valueChanged.connect(self._on_filter_changed)
+        risk_row.addWidget(self._filter_max_risk_spin)
+        risk_row.addStretch(1)
+        v.addLayout(risk_row)
+
+        self._filter_min_quality_row = QWidget()
+        qrow = QHBoxLayout(self._filter_min_quality_row)
+        qrow.setContentsMargins(0, 0, 0, 0)
+        qrow.setSpacing(6)
+        qrow.addWidget(QLabel("Min quality:"))
+        self._filter_min_quality_spin = QDoubleSpinBox()
+        self._filter_min_quality_spin.setRange(-999.0, 999.0)
+        self._filter_min_quality_spin.setDecimals(1)
+        self._filter_min_quality_spin.setSingleStep(1.0)
+        self._filter_min_quality_spin.setValue(-999.0)
+        self._filter_min_quality_spin.valueChanged.connect(self._on_filter_changed)
+        qrow.addWidget(self._filter_min_quality_spin)
+        qrow.addStretch(1)
+        v.addWidget(self._filter_min_quality_row)
+
+        muts_label = QLabel("Has any mutation:")
+        muts_label.setStyleSheet("QLabel { color:#bbb; }")
+        v.addWidget(muts_label)
+        self._filter_mutation_search = QLineEdit()
+        self._filter_mutation_search.setPlaceholderText("Search mutations…")
+        self._filter_mutation_search.textChanged.connect(self._refresh_mutation_filter_visibility)
+        v.addWidget(self._filter_mutation_search)
+        self._filter_mutation_list = QListWidget()
+        self._filter_mutation_list.setMinimumHeight(80)
+        self._filter_mutation_list.itemChanged.connect(self._on_mutation_item_changed)
+        v.addWidget(self._filter_mutation_list, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        self._filter_reset_btn = QPushButton("Reset filters")
+        self._filter_reset_btn.clicked.connect(self._reset_filters)
+        btn_row.addWidget(self._filter_reset_btn)
+        btn_row.addStretch(1)
+        v.addLayout(btn_row)
+
+        return pane
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setStyleSheet(
@@ -148,6 +219,13 @@ class SafeBreedingView(QWidget):
         self._parent_key_map: dict[int, set[int]] = {}
         self._navigate_to_pair_callback = None
 
+        # Filter state. Defaults match "no filtering".
+        self._filter_hide_paired: bool = False
+        self._filter_max_risk: int = 100
+        self._filter_min_quality: float = -999.0
+        self._filter_required_mutations: set[str] = set()
+        self._all_house_mutations: list[str] = []
+
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
@@ -156,14 +234,36 @@ class SafeBreedingView(QWidget):
         left.setFixedWidth(320)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
-        lv.setSpacing(8)
+        lv.setSpacing(0)
+
+        self._left_splitter = QSplitter(Qt.Vertical)
+        self._left_splitter.setChildrenCollapsible(False)
+        self._left_splitter.setHandleWidth(6)
+
+        # ── Filters pane (top) ────────────────────────────────────────
+        self._filters_pane = self._build_filters_pane()
+        self._left_splitter.addWidget(self._filters_pane)
+
+        # ── Cat selector pane (bottom) ────────────────────────────────
+        selector_pane = QWidget()
+        sv = QVBoxLayout(selector_pane)
+        sv.setContentsMargins(0, 0, 0, 0)
+        sv.setSpacing(8)
         self._list_title = QLabel(styleSheet="color:#666; font-size:10px; font-weight:bold;")
-        lv.addWidget(self._list_title)
+        sv.addWidget(self._list_title)
         self._search = QLineEdit()
-        lv.addWidget(self._search)
+        sv.addWidget(self._search)
         self._list = QListWidget()
         self._list.setIconSize(QSize(60, 20))
-        lv.addWidget(self._list, 1)
+        sv.addWidget(self._list, 1)
+        self._left_splitter.addWidget(selector_pane)
+
+        # Filters get a smaller share of the vertical space by default.
+        self._left_splitter.setStretchFactor(0, 0)
+        self._left_splitter.setStretchFactor(1, 1)
+        self._left_splitter.setSizes([260, 520])
+
+        lv.addWidget(self._left_splitter, 1)
         root.addWidget(left)
 
         right = QWidget()
@@ -206,6 +306,7 @@ class SafeBreedingView(QWidget):
         self._table.setItemDelegateForColumn(self._QUALITY_CAT_COL, SafeBreedingView._ColumnPaddingDelegate(24, 8, self._table))
         self._table.setColumnWidth(self._PAIR_JUMP_COL, 34)
         self._table.setColumnWidth(self._QUALITY_CAT_COL, 180)
+        self._table.setColumnWidth(self._QUALITY_ROOM_COL, 78)
         self._table.setColumnWidth(self._QUALITY_QUALITY_COL, 72)
         self._table.setColumnWidth(self._QUALITY_RISK_COL, 60)
         for col in range(self._QUALITY_STAT_START, self._QUALITY_STAT_START + len(STAT_NAMES)):
@@ -257,10 +358,12 @@ class SafeBreedingView(QWidget):
         self._quality_btn.setStyleSheet(self._mode_button_style(quality_active, "#2a3a5a", "#4a6a9a"))
 
     def _apply_mode_headers(self):
+        room_label = _tr("safe_breeding.table.room", default="Room")
         if self._quality_mode:
             labels = [
                 "",
                 _tr("safe_breeding.table.cat", default="Partner"),
+                room_label,
                 _tr("safe_breeding.table.quality", default="Quality"),
                 _tr("safe_breeding.table.risk"),
                 *[stat.upper() for stat in STAT_NAMES],
@@ -278,15 +381,17 @@ class SafeBreedingView(QWidget):
             labels = [
                 "",
                 _tr("safe_breeding.table.cat", default="Partner"),
+                room_label,
                 _tr("safe_breeding.table.risk"),
                 _tr("safe_breeding.table.shared_ancestors", default="Shared Anc."),
                 _tr("safe_breeding.table.outcome", default="Result"),
-            ] + [""] * (self._QUALITY_COLUMN_COUNT - 5)
+            ] + [""] * (self._QUALITY_COLUMN_COUNT - 6)
         self._table.setHorizontalHeaderLabels(labels)
         if self._quality_mode:
             self._table.verticalHeader().setDefaultSectionSize(30)
             self._table.setColumnWidth(self._PAIR_JUMP_COL, 34)
             self._table.setColumnWidth(self._QUALITY_CAT_COL, 168)
+            self._table.setColumnWidth(self._QUALITY_ROOM_COL, 78)
             self._table.setColumnWidth(self._QUALITY_QUALITY_COL, 72)
             self._table.setColumnWidth(self._QUALITY_RISK_COL, 60)
             for col in range(self._QUALITY_COLUMN_COUNT):
@@ -295,11 +400,23 @@ class SafeBreedingView(QWidget):
             self._table.verticalHeader().setDefaultSectionSize(22)
             self._table.setColumnWidth(self._PAIR_JUMP_COL, 34)
             self._table.setColumnWidth(self._SAFE_CAT_COL, 180)
+            self._table.setColumnWidth(self._SAFE_ROOM_COL, 90)
             self._table.setColumnWidth(self._SAFE_RISK_COL, 86)
             self._table.setColumnWidth(self._SAFE_SHARED_COL, 94)
             self._table.setColumnWidth(self._SAFE_OUTCOME_COL, 120)
             for col in range(self._QUALITY_COLUMN_COUNT):
-                self._table.setColumnHidden(col, col >= 5)
+                self._table.setColumnHidden(col, col >= 6)
+
+    @staticmethod
+    def _make_room_item(other: Cat, row_bg: QColor | None, row_fg: QColor | None) -> QTableWidgetItem:
+        room_display = ROOM_DISPLAY.get(other.room, other.room or "—")
+        item = QTableWidgetItem(room_display)
+        item.setTextAlignment(Qt.AlignCenter)
+        if row_bg is not None:
+            item.setBackground(QBrush(row_bg))
+            if row_fg is not None:
+                item.setForeground(QBrush(row_fg))
+        return item
 
     @staticmethod
     def _metric_item(label: str, bg: QColor, tooltip: str, *, row_bg: QColor | None = None, align=Qt.AlignCenter) -> QTableWidgetItem:
@@ -386,11 +503,13 @@ class SafeBreedingView(QWidget):
         if self._quality_mode == enabled and refresh:
             self._update_mode_controls()
             self._apply_mode_headers()
+            self._filter_min_quality_row.setVisible(self._quality_mode)
             self._refresh_list()
             return
         self._quality_mode = enabled
         self._update_mode_controls()
         self._apply_mode_headers()
+        self._filter_min_quality_row.setVisible(self._quality_mode)
         if refresh:
             self._refresh_list()
 
@@ -473,6 +592,7 @@ class SafeBreedingView(QWidget):
             }
             for cat in self._alive
         }
+        self._rebuild_mutation_filter_list()
         self._refresh_list()
         if selected_key is not None and selected_key in self._by_key:
             self.select_cat(self._by_key[selected_key])
@@ -498,6 +618,121 @@ class SafeBreedingView(QWidget):
                 self._list.scrollToItem(item)
                 return
 
+    # ── Filter handlers ─────────────────────────────────────────────
+    def _on_filter_changed(self, *_):
+        self._filter_hide_paired = self._filter_hide_paired_btn.isChecked()
+        self._filter_max_risk = int(self._filter_max_risk_spin.value())
+        self._filter_min_quality = float(self._filter_min_quality_spin.value())
+        # Hide-paired affects the cat list too — refresh both.
+        self._refresh_list()
+        cur = self._list.currentItem()
+        if cur is not None:
+            self._render_for(self._by_key.get(int(cur.data(Qt.UserRole))))
+
+    def _on_mutation_item_changed(self, item: QListWidgetItem):
+        name = item.data(Qt.UserRole)
+        if not isinstance(name, str):
+            return
+        if item.checkState() == Qt.Checked:
+            self._filter_required_mutations.add(name)
+        else:
+            self._filter_required_mutations.discard(name)
+        self._on_filter_changed()
+
+    def _refresh_mutation_filter_visibility(self, *_):
+        query = self._filter_mutation_search.text().strip().lower()
+        for i in range(self._filter_mutation_list.count()):
+            item = self._filter_mutation_list.item(i)
+            text = (item.text() or "").lower()
+            item.setHidden(bool(query) and query not in text)
+
+    def _reset_filters(self):
+        self._filter_hide_paired_btn.setChecked(False)
+        self._filter_max_risk_spin.setValue(100)
+        self._filter_min_quality_spin.setValue(-999.0)
+        self._filter_mutation_search.clear()
+        self._filter_required_mutations.clear()
+        self._filter_mutation_list.blockSignals(True)
+        try:
+            for i in range(self._filter_mutation_list.count()):
+                self._filter_mutation_list.item(i).setCheckState(Qt.Unchecked)
+        finally:
+            self._filter_mutation_list.blockSignals(False)
+        self._refresh_mutation_filter_visibility()
+        self._on_filter_changed()
+
+    @staticmethod
+    def _cat_trait_pool(cat: Cat) -> set[str]:
+        """All inheritable trait names on a cat (mutations + passives +
+        disorders + defects + abilities). Used by the mutation filter,
+        which is broader than just visual mutations."""
+        pool: set[str] = set()
+        for attr in ("mutations", "passive_abilities", "disorders", "defects", "abilities"):
+            for t in (getattr(cat, attr, None) or []):
+                if t:
+                    pool.add(str(t))
+        return pool
+
+    def _has_mutual_lover(self, cat: Cat) -> bool:
+        cat_lovers = self._lover_key_map.get(cat.db_key, set())
+        for lover_key in cat_lovers:
+            if cat.db_key in self._lover_key_map.get(lover_key, set()):
+                return True
+        return False
+
+    def _rebuild_mutation_filter_list(self):
+        """Rebuild the filter checklist from the current alive roster."""
+        names = sorted({
+            t for cat in self._alive for t in self._cat_trait_pool(cat)
+        }, key=lambda s: s.lower())
+        self._all_house_mutations = names
+        # Drop any selected mutations no longer present in the house.
+        self._filter_required_mutations &= set(names)
+
+        self._filter_mutation_list.blockSignals(True)
+        try:
+            self._filter_mutation_list.clear()
+            for name in names:
+                item = QListWidgetItem(name)
+                item.setData(Qt.UserRole, name)
+                item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                item.setCheckState(Qt.Checked if name in self._filter_required_mutations else Qt.Unchecked)
+                self._filter_mutation_list.addItem(item)
+        finally:
+            self._filter_mutation_list.blockSignals(False)
+        self._refresh_mutation_filter_visibility()
+        self._highlight_selected_cat_mutations(self._focused_cat())
+
+    def _highlight_selected_cat_mutations(self, cat: Optional[Cat]):
+        """Bold + tint traits the selected cat already has.
+
+        Blocks signals while mutating display properties — otherwise
+        setText/setFont fire itemChanged, which loops back through
+        _on_filter_changed → _refresh_list → setCurrentRow → here.
+        """
+        cat_muts: set[str] = self._cat_trait_pool(cat) if cat is not None else set()
+        bold = QFont()
+        bold.setBold(True)
+        normal = QFont()
+        self._filter_mutation_list.blockSignals(True)
+        try:
+            for i in range(self._filter_mutation_list.count()):
+                item = self._filter_mutation_list.item(i)
+                name = item.data(Qt.UserRole)
+                if isinstance(name, str) and name in cat_muts:
+                    item.setFont(bold)
+                    item.setForeground(QBrush(QColor(178, 220, 255)))
+                    txt = item.text()
+                    if not txt.endswith(" ✓"):
+                        item.setText(f"{name} ✓")
+                else:
+                    item.setFont(normal)
+                    item.setForeground(QBrush(QColor(220, 220, 220)))
+                    if isinstance(name, str):
+                        item.setText(name)
+        finally:
+            self._filter_mutation_list.blockSignals(False)
+
     def _refresh_list(self):
         query = self._search.text().strip().lower()
         current_key = None
@@ -509,7 +744,10 @@ class SafeBreedingView(QWidget):
         for cat in self._alive:
             if query and query not in cat.name.lower():
                 continue
-            text = f"{cat.name}  ({cat.gender_display})"
+            if self._filter_hide_paired and self._has_mutual_lover(cat):
+                continue
+            room_display = ROOM_DISPLAY.get(cat.room, cat.room or "—")
+            text = f"{cat.name}  ({cat.gender_display})  · {room_display}"
             if cat.is_blacklisted:
                 text += f"  [{_tr('safe_breeding.list.blocked')}]"
             if cat.must_breed:
@@ -537,9 +775,12 @@ class SafeBreedingView(QWidget):
 
     def _on_current_item_changed(self, current, previous):
         if current is None:
+            self._highlight_selected_cat_mutations(None)
             self._render_for(None)
             return
-        self._render_for(self._by_key.get(int(current.data(Qt.UserRole))))
+        cat = self._by_key.get(int(current.data(Qt.UserRole)))
+        self._highlight_selected_cat_mutations(cat)
+        self._render_for(cat)
 
     def _on_table_row_clicked(self, row: int, _column: int):
         if row < 0 or row >= len(self._table_row_cat_keys):
@@ -563,6 +804,10 @@ class SafeBreedingView(QWidget):
         cache = self._cache
         self._title.setText(f"Mating Pair Search for {cat.name}")
 
+        required_muts = self._filter_required_mutations
+        max_risk = self._filter_max_risk
+        min_quality = self._filter_min_quality
+
         candidates: list[dict[str, object]] = []
         for other in self._alive:
             if other is cat:
@@ -570,12 +815,17 @@ class SafeBreedingView(QWidget):
             ok, _ = can_breed(cat, other)
             if not ok:
                 continue
+            if required_muts:
+                if not (self._cat_trait_pool(other) & required_muts):
+                    continue
             if cache is not None and cache.ready:
                 shared, recent_shared = cache.get_shared(cat, other, recent_depth=3)
                 rel = cache.get_risk(cat, other)
             else:
                 shared, recent_shared = shared_ancestor_counts(cat, other, recent_depth=3)
                 rel = risk_percent(cat, other)
+            if rel > max_risk:
+                continue
             quality_factors: Optional[PairFactors] = None
             if self._quality_mode:
                 quality_factors = score_pair(
@@ -588,6 +838,8 @@ class SafeBreedingView(QWidget):
                     stimulation=self._pair_stimulation(),
                 )
                 if not quality_factors.compatible:
+                    continue
+                if quality_factors.quality < min_quality:
                     continue
             closest_recent_gen = 0
             if recent_shared:
@@ -744,6 +996,7 @@ class SafeBreedingView(QWidget):
                 outcome_item.setForeground(QBrush(risk_color))
                 self._table.setCellWidget(row, self._PAIR_JUMP_COL, self._make_pair_jump_button(cat.db_key, other.db_key))
                 self._table.setItem(row, self._SAFE_CAT_COL, name_item)
+                self._table.setItem(row, self._SAFE_ROOM_COL, self._make_room_item(other, row_bg, row_fg))
                 self._table.setItem(row, self._SAFE_RISK_COL, risk_item)
                 self._table.setItem(row, self._SAFE_SHARED_COL, shared_item)
                 self._table.setItem(row, self._SAFE_OUTCOME_COL, outcome_item)
@@ -840,6 +1093,7 @@ class SafeBreedingView(QWidget):
             )
             self._table.setCellWidget(row, self._PAIR_JUMP_COL, self._make_pair_jump_button(cat.db_key, other.db_key))
             self._table.setItem(row, self._QUALITY_CAT_COL, name_item)
+            self._table.setItem(row, self._QUALITY_ROOM_COL, self._make_room_item(other, row_bg, row_fg))
             self._table.setItem(row, self._QUALITY_QUALITY_COL, quality_item)
             self._table.setItem(row, self._QUALITY_RISK_COL, risk_item)
             for idx, stat_item in enumerate(stat_items, start=self._QUALITY_STAT_START):
