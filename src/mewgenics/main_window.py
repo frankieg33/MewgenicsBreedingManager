@@ -48,6 +48,7 @@ from mewgenics.utils.config import (
     _saved_zoom_percent, _set_zoom_percent,
     _saved_font_size_offset, _set_font_size_offset_config,
     _saved_last_seen_version, _set_last_seen_version,
+    _saved_show_getting_started_prompt, _set_show_getting_started_prompt,
     _saved_accessibility_preset, _set_accessibility_preset,
     _saved_total_stats_display, _set_total_stats_display,
     _saved_stat_icon_mode, _set_stat_icon_mode,
@@ -115,6 +116,7 @@ from mewgenics.dialogs import (
     SharedOptimizerSearchSettingsDialog,
     SaveSelectorDialog,
     AboutDialog,
+    GettingStartedPromptDialog,
     OnboardingDialog,
     WhatsNewDialog,
 )
@@ -756,16 +758,25 @@ class MainWindow(QMainWindow):
         if mark_seen:
             _set_last_seen_version(APP_VERSION)
 
+    def _show_getting_started_prompt(self):
+        dlg = GettingStartedPromptDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        if dlg.choice == GettingStartedPromptDialog.ALWAYS_SKIP:
+            _set_show_getting_started_prompt(False)
+            return
+        if dlg.choice == GettingStartedPromptDialog.OPEN_GUIDE:
+            self._show_onboarding_dialog(mark_seen=True)
+
     def _maybe_show_startup_dialogs(self):
         if self._startup_dialogs_shown:
             return
         self._startup_dialogs_shown = True
         last_seen = _saved_last_seen_version()
-        if not last_seen:
-            self._show_onboarding_dialog(mark_seen=True)
-            return
         if last_seen != APP_VERSION:
             self._show_whats_new_dialog(mark_seen=True)
+        if _saved_show_getting_started_prompt(True):
+            self._show_getting_started_prompt()
 
     def _apply_accessibility_style(self, preset: str):
         app = QApplication.instance()
