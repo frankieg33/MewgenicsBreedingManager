@@ -246,6 +246,17 @@ def _set_last_seen_version(version: str):
     _save_app_config(data)
 
 
+def _saved_show_getting_started_prompt(default: bool = True) -> bool:
+    data = _load_app_config()
+    return _coerce_bool(data.get("show_getting_started_prompt"), default)
+
+
+def _set_show_getting_started_prompt(enabled: bool):
+    data = _load_app_config()
+    data["show_getting_started_prompt"] = bool(enabled)
+    _save_app_config(data)
+
+
 def _saved_accessibility_preset(default: str = "Default") -> str:
     data = _load_app_config()
     value = data.get("accessibility_preset", default)
