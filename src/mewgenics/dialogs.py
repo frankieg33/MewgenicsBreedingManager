@@ -848,6 +848,70 @@ class WhatsNewDialog(QDialog):
         root.addLayout(button_row)
 
 
+class GettingStartedPromptDialog(QDialog):
+    OPEN_GUIDE = "open"
+    SKIP_ONCE = "skip_once"
+    ALWAYS_SKIP = "always_skip"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.choice = self.SKIP_ONCE
+        self.setModal(True)
+        self.setWindowTitle("Getting Started")
+        self.setMinimumWidth(460)
+        self.setStyleSheet(
+            "QDialog { background:#0d0d1c; }"
+            "QLabel { color:#ddd; }"
+            "QPushButton { background:#1a1a32; color:#aaa; border:1px solid #2a2a4a;"
+            " border-radius:4px; padding:6px 12px; }"
+            "QPushButton:hover { background:#252545; color:#ddd; }"
+        )
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        title = QLabel("Open the getting started guide?")
+        title.setStyleSheet("color:#f0f0ff; font-size:18px; font-weight:bold;")
+        root.addWidget(title)
+
+        body = QLabel(
+            "This short guide explains the main roster workflow, breeding tools, and where to export cats when you want outside help."
+        )
+        body.setWordWrap(True)
+        body.setStyleSheet("color:#b9bddf; line-height:1.4;")
+        root.addWidget(body)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+
+        open_btn = QPushButton("Open Guide")
+        open_btn.clicked.connect(self._open_guide)
+        button_row.addWidget(open_btn)
+
+        skip_once_btn = QPushButton("Skip Once")
+        skip_once_btn.clicked.connect(self._skip_once)
+        button_row.addWidget(skip_once_btn)
+
+        always_skip_btn = QPushButton("Always Skip")
+        always_skip_btn.clicked.connect(self._always_skip)
+        button_row.addWidget(always_skip_btn)
+
+        root.addLayout(button_row)
+
+    def _open_guide(self):
+        self.choice = self.OPEN_GUIDE
+        self.accept()
+
+    def _skip_once(self):
+        self.choice = self.SKIP_ONCE
+        self.accept()
+
+    def _always_skip(self):
+        self.choice = self.ALWAYS_SKIP
+        self.accept()
+
+
 class OnboardingDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -869,88 +933,115 @@ class OnboardingDialog(QDialog):
         root.setContentsMargins(16, 16, 16, 16)
         root.setSpacing(12)
 
-        title = QLabel("Welcome to Mewgenics Breeding Manager")
+        title = QLabel("Getting Started With Mewgenics Breeding Manager")
         title.setStyleSheet("color:#f0f0ff; font-size:18px; font-weight:bold;")
         root.addWidget(title)
 
         self._stack = QStackedWidget()
         self._stack.addWidget(self._make_page(
-            "1. Load a save",
+            "1. Start Here",
             f"""
-            <p>Start with <b>File > Open Save</b> or your configured default save.</p>
+            <p>This app helps you inspect your save, find strong breeders, compare pairings, and export cat data when you want outside help.</p>
+            <p>A practical workflow is: load your save, use the app to narrow the roster, export a CSV, then ask an LLM or check the community wiki for extra ideas and terminology.</p>
+            <p>Start with <b>File &gt; Open Save</b> or your configured default save.</p>
             <p>The save root currently points to:</p>
             <p><code>{_save_root_dir()}</code></p>
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "2. Sidebar shortcuts",
+            "2. Your Main Workflow",
             """
-            <p>The left sidebar jumps between the most useful views:</p>
+            <p>Most sessions follow the same loop:</p>
             <ul>
-              <li>Room optimizer and Perfect Planner</li>
-              <li>Mating Pair Search and Breeding Partners</li>
-              <li>Family Tree and other info views</li>
+              <li>Start in the roster to sort, filter, and tag cats.</li>
+              <li>Use quick scoring views to identify weak cats, strong cats, and likely breeders.</li>
+              <li>Open pair search or scoring views when you want recommendations.</li>
+              <li>Use planner and family views when you need longer-term context.</li>
+            </ul>
+            <p>You do not need every tab every time. The app is most useful when you jump to the tool that matches your current breeding question.</p>
+            """,
+        ))
+        self._stack.addWidget(self._make_page(
+            "3. Roster: Your Home Base",
+            """
+            <p>The roster is the home base for almost everything. Use it to sort, filter, tag, and inspect cats before opening more specialized tools.</p>
+            <ul>
+              <li>Click column headers to sort by the stats or traits you care about.</li>
+              <li>Use tags and quick actions to mark breeders, experiments, or cats you plan to donate.</li>
+              <li>Open cat details whenever you need a clearer picture before making a pairing decision.</li>
             </ul>
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "3. Roster workflow",
+            "4. Find Weak Cats Fast",
             """
-            <p>Use the main roster to sort, filter, tag, and inspect cats.</p>
+            <p>When you want to trim the roster quickly, start with the built-in shortcuts for weak-cat review.</p>
             <ul>
-              <li>Right-click rows for quick actions.</li>
-              <li>The Tags button opens the tag manager.</li>
-              <li>The status bar version label opens release notes.</li>
+              <li><b>Donation Candidates</b> helps surface cats that are usually safe to give away.</li>
+              <li><b>Simple Scoring</b> is great when you want a fast custom point system for your current breeding goal.</li>
+              <li>Combining filters, tags, and a simple score usually gets you to a manageable shortlist fast.</li>
             </ul>
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "4. Help and accessibility",
+            "5. Understand Pair Suggestions",
             """
-            <p>The Settings menu now includes accessibility presets and saved UI scale controls.</p>
-            <p>The Help menu gives you this walkthrough again, What&apos;s New, and About.</p>
-            <p>Cat sprites require shape assets &mdash; these are extracted automatically from
-            <code>DefinedShapes.zip</code> or the game&apos;s <code>resources.gpak</code> on first launch.</p>
-            """,
-        ))
-        self._stack.addWidget(self._make_page(
-            "5. Cat Scoring &mdash; Detailed Scoring",
-            """
-            <p>The <b>Detailed Scoring</b> view ranks every cat with a breed priority score
-            based on configurable weights. Open it from the <b>Cat Scoring</b> section in the sidebar.</p>
+            <p>Pair-search tools are useful because the app checks a huge number of possible combinations for you.</p>
             <ul>
-              <li><b>Scope:</b> Choose which rooms to include. Scores adjust based on what&apos;s in scope &mdash;
-                  a rare stat-7 is worth more if fewer scope cats share it.</li>
-              <li><b>Weights:</b> Tune how much each factor matters &mdash; stat rarity, genetic risk,
-                  libido, aggression, trait ratings, and more. Hover any weight for a description.</li>
-              <li><b>Trait Ratings:</b> Double-click abilities or mutations in the right panel to rate them
-                  as Top Priority, Desirable, or Undesirable. Cats owning rare top-priority traits score higher.</li>
-              <li><b>Profiles:</b> Save up to 5 independent weight/trait setups so you can switch approaches instantly.</li>
-              <li><b>Heatmap:</b> Toggle color-coding to spot strengths and weaknesses at a glance.</li>
+              <li>Instead of manually eyeballing every match, the app searches many combinations and surfaces the strongest-looking options.</li>
+              <li>If you ever wonder <b>&ldquo;why these 4 pairs?&rdquo;</b>, treat the list as a shortlist generated from the app&apos;s scoring rules and breeding constraints.</li>
+              <li>The right next step is usually to click into a promising pair and inspect the details, not to assume the first result is always the only correct answer.</li>
+            </ul>
+            <ul>
+              <li>Some top pairs are balanced all-rounders.</li>
+              <li>Others are specialized picks for a stat, trait, or safer lineage goal.</li>
             </ul>
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "6. Cat Scoring &mdash; Simple Scoring",
+            "6. Detailed Scoring",
             """
-            <p>The <b>Simple Scoring</b> view lets you assign point values to individual stats,
-            mutations, disorders, and personality traits, then sort by total score.</p>
+            <p><b>Detailed Scoring</b> is the deeper ranking tool when you want more than a quick yes/no filter.</p>
             <ul>
-              <li>Great for specific breeding goals like &ldquo;I need high STR melee cats&rdquo;.</li>
-              <li>Switch between per-mutation weights or blanket desired/undesired mode.</li>
-              <li>Uses its own trait-rating profiles stored per save.</li>
+              <li>It ranks cats using configurable weights, scope, and trait priorities.</li>
+              <li>Use it when you want to understand <i>why</i> a cat rises to the top instead of just seeing a simple total.</li>
+              <li>Profiles let you save different breeding philosophies and switch between them quickly.</li>
+              <li>Heatmap coloring makes strengths and weaknesses easier to scan at a glance.</li>
             </ul>
             """,
         ))
         self._stack.addWidget(self._make_page(
-            "7. Cat Sprites",
+            "7. Planning Tools",
             """
-            <p>The Family Tree view can render in-game cat portraits using sprite data
-            from the game&apos;s <code>resources.gpak</code>.</p>
+            <p>Use the planning views when you are no longer asking &ldquo;Who looks good right now?&rdquo; and have moved on to &ldquo;What should I do over the next few generations?&rdquo;</p>
             <ul>
-              <li>On first launch, shape assets are extracted automatically (~3 s from bundled ZIP, ~25 s from GPAK).</li>
-              <li>Rendered thumbnails are cached on disk for instant loading on subsequent opens.</li>
-              <li>Toggle <b>Show Cat Images</b> in the Family Tree view to enable portraits.</li>
+              <li><b>Perfect Planner</b> helps you map out future breeding steps.</li>
+              <li><b>Room Optimizer</b> helps organize active breeders and room assignments.</li>
+              <li>These tools are best after you already know which cats you want to keep in the program.</li>
+            </ul>
+            """,
+        ))
+        self._stack.addWidget(self._make_page(
+            "8. Family Tree And Context",
+            """
+            <p>The family and context views are where you sanity-check a promising idea before you commit to it.</p>
+            <ul>
+              <li><b>Family Tree</b> helps you understand ancestry, relationships, and how a cat fits into the bigger picture.</li>
+              <li>Use detail views when you need context on traits, parents, offspring, or lineage risks.</li>
+              <li>Good pair suggestions become much easier to trust once you confirm the surrounding family context.</li>
+            </ul>
+            """,
+        ))
+        self._stack.addWidget(self._make_page(
+            "9. Export And Ask For Help",
+            """
+            <p>When you want a second opinion, export your data and ask a focused question.</p>
+            <p>Use <b>File &gt; Export Cats</b>, then share the CSV with your helper tool of choice.</p>
+            <p>Example prompts:</p>
+            <ul>
+              <li>&ldquo;Based on this CSV, which cats look like the best long-term breeders and why?&rdquo;</li>
+              <li>&ldquo;Which cats look safest to donate without hurting my breeding options?&rdquo;</li>
+              <li>&ldquo;What do these mutations and traits mean, and which ones should I prioritize?&rdquo;</li>
             </ul>
             """,
         ))
