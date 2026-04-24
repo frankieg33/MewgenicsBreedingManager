@@ -13,7 +13,16 @@ def _cat_base_sum(cat: "Cat") -> int:
 
 
 def _is_exceptional_breeder(cat: "Cat") -> bool:
-    from mewgenics.utils.thresholds import EXCEPTIONAL_SUM_THRESHOLD
+    from mewgenics.utils.thresholds import (
+        EXCEPTIONAL_SUM_THRESHOLD, SCORE_SOURCE,
+        DETAILED_EXCEPTIONAL_THRESHOLD, _get_detailed_score,
+    )
+    if SCORE_SOURCE == "detailed":
+        score = _get_detailed_score(cat)
+        if score is not None:
+            return score >= DETAILED_EXCEPTIONAL_THRESHOLD
+        # Fall back to base sum when the Detailed Scoring cache isn't populated
+        # yet (e.g. view never opened this session).
     return _cat_base_sum(cat) >= EXCEPTIONAL_SUM_THRESHOLD
 
 
@@ -22,11 +31,22 @@ def _has_eternal_youth(cat: "Cat") -> bool:
 
 
 def _donation_candidate_base_reason(cat: "Cat") -> Optional[str]:
-    from mewgenics.utils.thresholds import EXCEPTIONAL_SUM_THRESHOLD, DONATION_SUM_THRESHOLD, DONATION_MAX_TOP_STAT
-    from mewgenics.utils.thresholds import DONATION_MISSING_PLANNER_TRAITS, _donation_planner_traits
+    from mewgenics.utils.thresholds import (
+        EXCEPTIONAL_SUM_THRESHOLD, DONATION_SUM_THRESHOLD, DONATION_MAX_TOP_STAT,
+        DONATION_MISSING_PLANNER_TRAITS, _donation_planner_traits,
+        SCORE_SOURCE, DETAILED_DONATION_THRESHOLD, _get_detailed_score,
+    )
     from mewgenics.utils.abilities import _cat_has_trait
     if _has_eternal_youth(cat):
         return None
+
+    use_detailed = SCORE_SOURCE == "detailed"
+    detailed_score = _get_detailed_score(cat) if use_detailed else None
+    # If the user picked Detailed but the cache is empty, silently fall back
+    # to base-sum so the sidebar never flags every cat at once.
+    if use_detailed and detailed_score is None:
+        use_detailed = False
+
     planner_trait_reason: Optional[str] = None
     planner_mode = False
     if DONATION_MISSING_PLANNER_TRAITS:
@@ -40,19 +60,29 @@ def _donation_candidate_base_reason(cat: "Cat") -> Optional[str]:
                 return None
             missing = ", ".join(str(t.get("display") or t.get("key") or "?") for t in planner_traits[:4])
             planner_trait_reason = f"missing selected planner traits{f' ({missing})' if missing else ''}"
+
     total = _cat_base_sum(cat)
     top_stat = max(cat.base_stats.values()) if cat.base_stats else 0
+
+    def _floor_reasons() -> list[str]:
+        if use_detailed:
+            if detailed_score is not None and detailed_score <= DETAILED_DONATION_THRESHOLD:
+                return [f"detailed score {detailed_score:+.1f} <= {DETAILED_DONATION_THRESHOLD:+.1f}"]
+            return []
+        reasons: list[str] = []
+        if total <= DONATION_SUM_THRESHOLD:
+            reasons.append(f"base sum {total} <= {DONATION_SUM_THRESHOLD}")
+        if top_stat <= DONATION_MAX_TOP_STAT:
+            reasons.append(f"top base stat {top_stat} <= {DONATION_MAX_TOP_STAT}")
+        return reasons
+
     if planner_mode:
         if planner_trait_reason is None:
             return None
-        floor_reasons: list[str] = []
-        if total <= DONATION_SUM_THRESHOLD:
-            floor_reasons.append(f"base sum {total} <= {DONATION_SUM_THRESHOLD}")
-        if top_stat <= DONATION_MAX_TOP_STAT:
-            floor_reasons.append(f"top base stat {top_stat} <= {DONATION_MAX_TOP_STAT}")
-        if not floor_reasons:
+        floor = _floor_reasons()
+        if not floor:
             return None
-        reasons: list[str] = [planner_trait_reason, *floor_reasons]
+        reasons: list[str] = [planner_trait_reason, *floor]
         aggression = cat.aggression
         if aggression is not None and aggression >= 0.66:
             reasons.append("high aggression")
@@ -60,17 +90,17 @@ def _donation_candidate_base_reason(cat: "Cat") -> Optional[str]:
 
     if _is_exceptional_breeder(cat):
         return None
-    reasons: list[str] = []
-    if total <= DONATION_SUM_THRESHOLD:
-        reasons.append(f"base sum {total} <= {DONATION_SUM_THRESHOLD}")
-    if top_stat <= DONATION_MAX_TOP_STAT:
-        reasons.append(f"top base stat {top_stat} <= {DONATION_MAX_TOP_STAT}")
+
+    reasons = _floor_reasons()
     aggression = cat.aggression
     if aggression is not None and aggression >= 0.66:
         reasons.append("high aggression")
     if not reasons:
         return None
-    if total > DONATION_SUM_THRESHOLD and top_stat > DONATION_MAX_TOP_STAT:
+    # In base-sum mode, require both sum AND top-stat to be under the floor —
+    # a single low stat alone isn't enough.  Detailed mode already has a
+    # single-axis floor so we don't apply that gate.
+    if not use_detailed and total > DONATION_SUM_THRESHOLD and top_stat > DONATION_MAX_TOP_STAT:
         return None
     return ", ".join(reasons)
 

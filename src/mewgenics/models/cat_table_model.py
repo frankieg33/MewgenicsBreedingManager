@@ -875,6 +875,17 @@ class CatTableModel(QAbstractTableModel):
             return _make_stat_header_icon(stat_name)
         return None
 
+    @staticmethod
+    def _exceptional_tooltip(cat, prefix: str = "Exceptional breeder") -> str:
+        from mewgenics.utils.thresholds import (
+            SCORE_SOURCE, DETAILED_EXCEPTIONAL_THRESHOLD, _get_detailed_score,
+        )
+        if SCORE_SOURCE == "detailed":
+            score = _get_detailed_score(cat)
+            if score is not None:
+                return f"{prefix}: detailed score {score:+.1f} >= {DETAILED_EXCEPTIONAL_THRESHOLD:+.1f}"
+        return f"{prefix}: base stat sum {_cat_base_sum(cat)} >= {EXCEPTIONAL_SUM_THRESHOLD}"
+
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():
             return None
@@ -1073,9 +1084,7 @@ class CatTableModel(QAbstractTableModel):
             if col == COL_NAME:
                 notes: list[str] = []
                 if is_exceptional:
-                    notes.append(
-                        f"Exceptional breeder: base stat sum {_cat_base_sum(cat)} >= {EXCEPTIONAL_SUM_THRESHOLD}"
-                    )
+                    notes.append(self._exceptional_tooltip(cat))
                 if donation_reason:
                     notes.append(f"Donation candidate: {donation_reason}")
                 if notes:
@@ -1135,7 +1144,7 @@ class CatTableModel(QAbstractTableModel):
                 if self._show_total_stats:
                     notes.append(f"Total stat sum: {sum(cat.total_stats.values())}")
                 if is_exceptional:
-                    notes.append(f"Exceptional threshold: >= {EXCEPTIONAL_SUM_THRESHOLD}")
+                    notes.append(self._exceptional_tooltip(cat, prefix="Exceptional threshold"))
                 if donation_reason:
                     notes.append(f"Donation signal: {donation_reason}")
                 return "\n".join(notes)

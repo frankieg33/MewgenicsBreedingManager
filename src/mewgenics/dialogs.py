@@ -10,7 +10,7 @@ from typing import Optional
 
 from PySide6.QtWidgets import (
     QWidget, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QScrollArea, QFrame, QGridLayout, QSpinBox, QDoubleSpinBox, QCheckBox,
+    QScrollArea, QFrame, QGridLayout, QSpinBox, QDoubleSpinBox, QCheckBox, QComboBox,
     QListWidget, QListWidgetItem, QFileDialog, QGroupBox,
     QStackedWidget, QTextBrowser, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
@@ -1052,6 +1052,28 @@ class ThresholdPreferencesDialog(QDialog):
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(8)
 
+        self._score_source_combo = QComboBox()
+        self._score_source_combo.addItem(
+            _tr("thresholds.source.base_sum", default="Base stat sum"), "base_sum"
+        )
+        self._score_source_combo.addItem(
+            _tr("thresholds.source.detailed", default="Detailed Scoring total"), "detailed"
+        )
+        current_source = str(self._prefs.get("score_source", "base_sum"))
+        idx = self._score_source_combo.findData(current_source)
+        if idx >= 0:
+            self._score_source_combo.setCurrentIndex(idx)
+        self._score_source_combo.setToolTip(_tr(
+            "thresholds.source.tooltip",
+            default=(
+                "Base stat sum compares raw base-stat totals against the "
+                "integer thresholds below.  Detailed Scoring uses the latest "
+                "total produced by the Detailed Scoring view — open that view "
+                "at least once per save so the cache is populated."
+            ),
+        ))
+        self._score_source_combo.currentIndexChanged.connect(self._update_preview)
+
         self._exceptional_spin = QSpinBox()
         self._exceptional_spin.setRange(0, 999)
         self._exceptional_spin.setValue(self._prefs["exceptional_sum_threshold"])
@@ -1066,6 +1088,20 @@ class ThresholdPreferencesDialog(QDialog):
         self._top_stat_spin.setRange(0, 20)
         self._top_stat_spin.setValue(self._prefs["donation_max_top_stat"])
         self._top_stat_spin.valueChanged.connect(self._update_preview)
+
+        self._detailed_exceptional_spin = QDoubleSpinBox()
+        self._detailed_exceptional_spin.setRange(-999.0, 999.0)
+        self._detailed_exceptional_spin.setDecimals(1)
+        self._detailed_exceptional_spin.setSingleStep(1.0)
+        self._detailed_exceptional_spin.setValue(float(self._prefs.get("detailed_exceptional_threshold", 20.0)))
+        self._detailed_exceptional_spin.valueChanged.connect(self._update_preview)
+
+        self._detailed_donation_spin = QDoubleSpinBox()
+        self._detailed_donation_spin.setRange(-999.0, 999.0)
+        self._detailed_donation_spin.setDecimals(1)
+        self._detailed_donation_spin.setSingleStep(1.0)
+        self._detailed_donation_spin.setValue(float(self._prefs.get("detailed_donation_threshold", -5.0)))
+        self._detailed_donation_spin.valueChanged.connect(self._update_preview)
 
         self._planner_trait_check = QCheckBox(_tr(
             "thresholds.planner_trait_toggle",
@@ -1099,18 +1135,34 @@ class ThresholdPreferencesDialog(QDialog):
         self._curve_spin.setValue(float(self._prefs["adaptive_curve_strength"]))
         self._curve_spin.valueChanged.connect(self._update_preview)
 
-        grid.addWidget(QLabel(_tr("thresholds.exceptional", default="Exceptional threshold")), 0, 0)
-        grid.addWidget(self._exceptional_spin, 0, 1)
-        grid.addWidget(QLabel(_tr("thresholds.donation", default="Donation threshold")), 1, 0)
-        grid.addWidget(self._donation_spin, 1, 1)
-        grid.addWidget(QLabel(_tr("thresholds.donation_top_stat", default="Donation max top stat")), 2, 0)
-        grid.addWidget(self._top_stat_spin, 2, 1)
-        grid.addWidget(self._planner_trait_check, 3, 0, 1, 2)
-        grid.addWidget(self._adaptive_check, 4, 0, 1, 2)
-        grid.addWidget(QLabel(_tr("thresholds.reference_average", default="Reference living average")), 5, 0)
-        grid.addWidget(self._reference_spin, 5, 1)
-        grid.addWidget(QLabel(_tr("thresholds.curve_strength", default="Curve strength")), 6, 0)
-        grid.addWidget(self._curve_spin, 6, 1)
+        self._source_label = QLabel(_tr("thresholds.source", default="Score source"))
+        grid.addWidget(self._source_label, 0, 0)
+        grid.addWidget(self._score_source_combo, 0, 1)
+        self._base_exc_label = QLabel(_tr("thresholds.exceptional", default="Exceptional threshold"))
+        grid.addWidget(self._base_exc_label, 1, 0)
+        grid.addWidget(self._exceptional_spin, 1, 1)
+        self._base_don_label = QLabel(_tr("thresholds.donation", default="Donation threshold"))
+        grid.addWidget(self._base_don_label, 2, 0)
+        grid.addWidget(self._donation_spin, 2, 1)
+        self._base_top_label = QLabel(_tr("thresholds.donation_top_stat", default="Donation max top stat"))
+        grid.addWidget(self._base_top_label, 3, 0)
+        grid.addWidget(self._top_stat_spin, 3, 1)
+        self._detailed_exc_label = QLabel(_tr(
+            "thresholds.detailed_exceptional", default="Exceptional detailed score"
+        ))
+        grid.addWidget(self._detailed_exc_label, 4, 0)
+        grid.addWidget(self._detailed_exceptional_spin, 4, 1)
+        self._detailed_don_label = QLabel(_tr(
+            "thresholds.detailed_donation", default="Donation detailed score"
+        ))
+        grid.addWidget(self._detailed_don_label, 5, 0)
+        grid.addWidget(self._detailed_donation_spin, 5, 1)
+        grid.addWidget(self._planner_trait_check, 6, 0, 1, 2)
+        grid.addWidget(self._adaptive_check, 7, 0, 1, 2)
+        grid.addWidget(QLabel(_tr("thresholds.reference_average", default="Reference living average")), 8, 0)
+        grid.addWidget(self._reference_spin, 8, 1)
+        grid.addWidget(QLabel(_tr("thresholds.curve_strength", default="Curve strength")), 9, 0)
+        grid.addWidget(self._curve_spin, 9, 1)
         root.addLayout(grid)
 
         self._current_avg_label = QLabel()
@@ -1134,12 +1186,25 @@ class ThresholdPreferencesDialog(QDialog):
         root.addLayout(button_row)
 
         self._adaptive_check.toggled.connect(self._update_adaptive_controls)
+        self._score_source_combo.currentIndexChanged.connect(self._update_source_visibility)
         self._update_adaptive_controls(self._adaptive_check.isChecked())
+        self._update_source_visibility()
         self._update_preview()
 
     def _update_adaptive_controls(self, enabled: bool):
         self._reference_spin.setEnabled(enabled)
         self._curve_spin.setEnabled(enabled)
+
+    def _update_source_visibility(self, *_args):
+        source = str(self._score_source_combo.currentData() or "base_sum")
+        use_detailed = source == "detailed"
+        for widget in (self._base_exc_label, self._exceptional_spin,
+                       self._base_don_label, self._donation_spin,
+                       self._base_top_label, self._top_stat_spin):
+            widget.setVisible(not use_detailed)
+        for widget in (self._detailed_exc_label, self._detailed_exceptional_spin,
+                       self._detailed_don_label, self._detailed_donation_spin):
+            widget.setVisible(use_detailed)
 
     def _sync_exceptional_floor(self):
         if self._exceptional_spin.value() < self._donation_spin.value():
@@ -1158,12 +1223,42 @@ class ThresholdPreferencesDialog(QDialog):
             "adaptive_enabled": bool(self._adaptive_check.isChecked()),
             "adaptive_reference_avg_sum": float(self._reference_spin.value()),
             "adaptive_curve_strength": float(self._curve_spin.value()),
+            "score_source": str(self._score_source_combo.currentData() or "base_sum"),
+            "detailed_exceptional_threshold": float(self._detailed_exceptional_spin.value()),
+            "detailed_donation_threshold": float(self._detailed_donation_spin.value()),
         }
 
     def _update_preview(self, *_args):
         self._sync_exceptional_floor()
         prefs = _normalize_threshold_preferences(self._collect_preferences())
         exceptional, donation, top_stat, avg_sum = _effective_thresholds_for_cats(prefs, self._cats)
+        if prefs.get("score_source") == "detailed":
+            det_exc = prefs["detailed_exceptional_threshold"]
+            det_don = prefs["detailed_donation_threshold"]
+            preview_text = _tr(
+                "thresholds.preview_detailed",
+                default="Detailed Scoring: Exceptional >= {exc:+.1f}, Donation <= {don:+.1f}",
+                exc=det_exc,
+                don=det_don,
+            )
+            from mewgenics.utils.thresholds import _detailed_scores_ready
+            if not _detailed_scores_ready():
+                preview_text += _tr(
+                    "thresholds.preview_detailed.cache_missing",
+                    default=" — open the Detailed Scoring view to populate the cache; base-sum is used until then.",
+                )
+            self._preview_label.setText(preview_text)
+            if self._cats:
+                self._current_avg_label.setText(
+                    _tr(
+                        "thresholds.current_average",
+                        default="Living cats average base sum: {avg:.1f}",
+                        avg=avg_sum,
+                    )
+                )
+            else:
+                self._current_avg_label.setText("")
+            return
         if self._cats:
             self._current_avg_label.setText(
                 _tr(

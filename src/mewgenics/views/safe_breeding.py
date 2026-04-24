@@ -129,6 +129,14 @@ class SafeBreedingView(QWidget):
             jump_btn.setEnabled(False)
         return jump_btn
 
+    @staticmethod
+    def _filter_toggle_style() -> str:
+        return (
+            "QPushButton { background:#1a1a32; color:#bbb; border:1px solid #2a2a4a;"
+            " border-radius:4px; padding:5px 10px; }"
+            "QPushButton:checked { background:#2a3a5a; color:#fff; border:1px solid #4a6a9a; }"
+        )
+
     def _build_filters_pane(self) -> QWidget:
         pane = QWidget()
         v = QVBoxLayout(pane)
@@ -139,15 +147,11 @@ class SafeBreedingView(QWidget):
         title.setStyleSheet("color:#666; font-size:10px; font-weight:bold;")
         v.addWidget(title)
 
-        self._filter_hide_paired_btn = QPushButton("Hide cats already in love")
-        self._filter_hide_paired_btn.setCheckable(True)
-        self._filter_hide_paired_btn.setStyleSheet(
-            "QPushButton { background:#1a1a32; color:#bbb; border:1px solid #2a2a4a;"
-            " border-radius:4px; padding:5px 10px; }"
-            "QPushButton:checked { background:#2a3a5a; color:#fff; border:1px solid #4a6a9a; }"
-        )
-        self._filter_hide_paired_btn.toggled.connect(self._on_filter_changed)
-        v.addWidget(self._filter_hide_paired_btn)
+        self._filter_hide_left_paired_btn = QPushButton("Hide in-love cats on left")
+        self._filter_hide_left_paired_btn.setCheckable(True)
+        self._filter_hide_left_paired_btn.setStyleSheet(self._filter_toggle_style())
+        self._filter_hide_left_paired_btn.toggled.connect(self._on_filter_changed)
+        v.addWidget(self._filter_hide_left_paired_btn)
 
         risk_row = QHBoxLayout()
         risk_row.setSpacing(6)
@@ -220,7 +224,8 @@ class SafeBreedingView(QWidget):
         self._navigate_to_pair_callback = None
 
         # Filter state. Defaults match "no filtering".
-        self._filter_hide_paired: bool = False
+        self._filter_hide_left_paired: bool = False
+        self._filter_hide_matches_paired: bool = False
         self._filter_max_risk: int = 100
         self._filter_min_quality: float = -999.0
         self._filter_required_mutations: set[str] = set()
@@ -289,6 +294,11 @@ class SafeBreedingView(QWidget):
         mode_layout.addWidget(self._risk_btn)
         mode_layout.addStretch(1)
 
+        self._filter_hide_matches_btn = QPushButton("Hide in-love matches")
+        self._filter_hide_matches_btn.setCheckable(True)
+        self._filter_hide_matches_btn.setStyleSheet(self._filter_toggle_style())
+        self._filter_hide_matches_btn.toggled.connect(self._on_filter_changed)
+
         self._table = QTableWidget(0, self._QUALITY_COLUMN_COUNT)
         self._table.setIconSize(QSize(60, 20))
         self._table.verticalHeader().setVisible(False)
@@ -325,6 +335,7 @@ class SafeBreedingView(QWidget):
         rv.addWidget(self._mode_bar)
         rv.addWidget(self._title)
         rv.addWidget(self._summary)
+        rv.addWidget(self._filter_hide_matches_btn)
         rv.addWidget(self._table, 1)
         root.addWidget(right, 1)
 
@@ -620,10 +631,10 @@ class SafeBreedingView(QWidget):
 
     # ── Filter handlers ─────────────────────────────────────────────
     def _on_filter_changed(self, *_):
-        self._filter_hide_paired = self._filter_hide_paired_btn.isChecked()
+        self._filter_hide_left_paired = self._filter_hide_left_paired_btn.isChecked()
+        self._filter_hide_matches_paired = self._filter_hide_matches_btn.isChecked()
         self._filter_max_risk = int(self._filter_max_risk_spin.value())
         self._filter_min_quality = float(self._filter_min_quality_spin.value())
-        # Hide-paired affects the cat list too — refresh both.
         self._refresh_list()
         cur = self._list.currentItem()
         if cur is not None:
@@ -647,7 +658,8 @@ class SafeBreedingView(QWidget):
             item.setHidden(bool(query) and query not in text)
 
     def _reset_filters(self):
-        self._filter_hide_paired_btn.setChecked(False)
+        self._filter_hide_left_paired_btn.setChecked(False)
+        self._filter_hide_matches_btn.setChecked(False)
         self._filter_max_risk_spin.setValue(100)
         self._filter_min_quality_spin.setValue(-999.0)
         self._filter_mutation_search.clear()
@@ -679,6 +691,14 @@ class SafeBreedingView(QWidget):
             if cat.db_key in self._lover_key_map.get(lover_key, set()):
                 return True
         return False
+
+    def _has_any_lover(self, cat: Cat) -> bool:
+        """True if the cat has any lover, mutual or not.
+
+        Why: once a cat has fallen in love, they can't fall in love again,
+        so for filtering purposes any lover marks them as "taken".
+        """
+        return bool(self._lover_key_map.get(cat.db_key))
 
     def _rebuild_mutation_filter_list(self):
         """Rebuild the filter checklist from the current alive roster."""
@@ -744,10 +764,14 @@ class SafeBreedingView(QWidget):
         for cat in self._alive:
             if query and query not in cat.name.lower():
                 continue
-            if self._filter_hide_paired and self._has_mutual_lover(cat):
+            has_lover = self._has_any_lover(cat)
+            if self._filter_hide_left_paired and has_lover:
                 continue
             room_display = ROOM_DISPLAY.get(cat.room, cat.room or "—")
-            text = f"{cat.name}  ({cat.gender_display})  · {room_display}"
+            heart = " ♥" if has_lover else ""
+            cat_age = getattr(cat, "age", None)
+            age_str = f" · age {cat_age}" if cat_age is not None else ""
+            text = f"{cat.name}{heart}  ({cat.gender_display}){age_str}  · {room_display}"
             if cat.is_blacklisted:
                 text += f"  [{_tr('safe_breeding.list.blocked')}]"
             if cat.must_breed:
@@ -814,6 +838,8 @@ class SafeBreedingView(QWidget):
                 continue
             ok, _ = can_breed(cat, other)
             if not ok:
+                continue
+            if self._filter_hide_matches_paired and self._has_any_lover(other):
                 continue
             if required_muts:
                 if not (self._cat_trait_pool(other) & required_muts):
@@ -966,7 +992,10 @@ class SafeBreedingView(QWidget):
             self._table_row_cat_keys.append(other.db_key)
             row_bg = item.get("row_bg")
             row_fg = item.get("row_fg")
-            name_text = f"{other.name} ({other.gender_display})"
+            other_heart = " ♥" if self._has_any_lover(other) else ""
+            other_age_val = getattr(other, "age", None)
+            other_age = f" · age {other_age_val}" if other_age_val is not None else ""
+            name_text = f"{other.name}{other_heart} ({other.gender_display}){other_age}"
             if item.get("quality") is None:
                 risk_pct = int(round(float(item["risk"])))
                 if risk_pct >= 100:
@@ -977,8 +1006,7 @@ class SafeBreedingView(QWidget):
                     tag, risk_color = _tr("safe_breeding.tag.slightly_inbred"), QColor(143, 201, 230)
                 else:
                     tag, risk_color = _tr("safe_breeding.tag.not_inbred"), QColor(98, 194, 135)
-                heart = " ♥" if item.get("notes") and any("Lover" in note or "lovers" in note.lower() for note in item["notes"]) else ""
-                name_item = QTableWidgetItem(f"{other.name}{heart} ({other.gender_display})")
+                name_item = QTableWidgetItem(name_text)
                 icon = _make_tag_icon(_cat_tags(other), dot_size=14, spacing=4)
                 if not icon.isNull():
                     name_item.setIcon(icon)

@@ -17,6 +17,16 @@ DONATION_SUM_THRESHOLD = int(_BASE_DONATION)
 DONATION_MAX_TOP_STAT = int(_BASE_TOP_STAT)
 DONATION_MISSING_PLANNER_TRAITS = False
 
+# ── Score source ──────────────────────────────────────────────────────────────
+# "base_sum" compares raw base-stat sums against the int thresholds above.
+# "detailed" compares the Detailed Scoring total against the float thresholds
+# below, using the latest cache populated by the Detailed Scoring view.
+SCORE_SOURCE: str = "base_sum"
+DETAILED_EXCEPTIONAL_THRESHOLD: float = 20.0
+DETAILED_DONATION_THRESHOLD: float = -5.0
+
+_DETAILED_SCORES: dict[int, float] = {}
+
 _DONATION_PLANNER_TRAITS: tuple[dict, ...] = ()
 
 _THRESHOLD_CONFIG_KEY = "threshold_preferences"
@@ -28,6 +38,9 @@ _THRESHOLD_DEFAULTS = {
     "adaptive_enabled": False,
     "adaptive_reference_avg_sum": 28.0,
     "adaptive_curve_strength": 0.2,
+    "score_source": "base_sum",
+    "detailed_exceptional_threshold": 20.0,
+    "detailed_donation_threshold": -5.0,
 }
 
 _THRESHOLD_PREFERENCES = dict(_THRESHOLD_DEFAULTS)
@@ -79,7 +92,22 @@ def _normalize_threshold_preferences(data: dict | None) -> dict:
             _THRESHOLD_DEFAULTS["adaptive_curve_strength"],
             min_value=0.0,
         ),
+        "score_source": (
+            "detailed"
+            if str(data.get("score_source", _THRESHOLD_DEFAULTS["score_source"])).strip().lower() == "detailed"
+            else "base_sum"
+        ),
+        "detailed_exceptional_threshold": _coerce_float(
+            data.get("detailed_exceptional_threshold"),
+            _THRESHOLD_DEFAULTS["detailed_exceptional_threshold"],
+        ),
+        "detailed_donation_threshold": _coerce_float(
+            data.get("detailed_donation_threshold"),
+            _THRESHOLD_DEFAULTS["detailed_donation_threshold"],
+        ),
     }
+    if normalized["detailed_exceptional_threshold"] < normalized["detailed_donation_threshold"]:
+        normalized["detailed_exceptional_threshold"] = normalized["detailed_donation_threshold"]
     return _normalize_exceptional_and_donation(normalized)
 
 
@@ -143,10 +171,32 @@ def _effective_thresholds_for_cats(
 
 def _apply_threshold_preferences(prefs: dict | None = None, cats: list[Cat] | None = None):
     global _THRESHOLD_PREFERENCES, EXCEPTIONAL_SUM_THRESHOLD, DONATION_SUM_THRESHOLD, DONATION_MAX_TOP_STAT, DONATION_MISSING_PLANNER_TRAITS
+    global SCORE_SOURCE, DETAILED_EXCEPTIONAL_THRESHOLD, DETAILED_DONATION_THRESHOLD
     normalized = _normalize_threshold_preferences(prefs or _load_threshold_preferences())
     _THRESHOLD_PREFERENCES = normalized
     DONATION_MISSING_PLANNER_TRAITS = bool(normalized.get("donation_missing_planner_traits"))
     EXCEPTIONAL_SUM_THRESHOLD, DONATION_SUM_THRESHOLD, DONATION_MAX_TOP_STAT, _ = _effective_thresholds_for_cats(normalized, cats)
+    SCORE_SOURCE = str(normalized.get("score_source", "base_sum"))
+    DETAILED_EXCEPTIONAL_THRESHOLD = float(normalized.get("detailed_exceptional_threshold", 20.0))
+    DETAILED_DONATION_THRESHOLD = float(normalized.get("detailed_donation_threshold", -5.0))
+
+
+def _set_detailed_scores(scores: dict[int, float] | None):
+    """Install the latest Detailed Scoring totals keyed by id(cat).
+
+    Called from the Detailed Scoring view after each recompute finishes.
+    """
+    global _DETAILED_SCORES
+    _DETAILED_SCORES = dict(scores or {})
+
+
+def _get_detailed_score(cat: Cat) -> float | None:
+    """Return the cached Detailed Scoring total for a cat, or None if unavailable."""
+    return _DETAILED_SCORES.get(id(cat))
+
+
+def _detailed_scores_ready() -> bool:
+    return bool(_DETAILED_SCORES)
 
 
 def _current_threshold_summary(cats: list[Cat] | None = None) -> dict:

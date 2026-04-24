@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QApplication, QDialog, QMessageBox, QWidget,
     QVBoxLayout, QLabel, QProgressBar,
 )
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QPalette, QFont
 
 from mewgenics.utils.paths import APP_VERSION
@@ -165,18 +165,7 @@ def main():
 
         def _dismiss_splash():
             splash.close()
-
-        # The deferred QTimer.singleShot(0, load_save) in MainWindow.__init__
-        # starts a SaveLoadWorker.  Hook its completion to close the splash.
-        # We need a small delay so the worker is created first.
-        def _hook_worker():
-            worker = getattr(win, "_save_load_worker", None)
-            if worker is not None:
-                worker.finished_load.connect(_dismiss_splash)
-            else:
-                splash.close()
-
-        QTimer.singleShot(50, _hook_worker)
+        win.startup_save_load_finished.connect(_dismiss_splash)
     else:
         splash.close()
 

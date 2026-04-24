@@ -21,7 +21,7 @@ from breeding import (
     pair_projection, is_mutual_lover_pair,
     planner_inbreeding_penalty, planner_pair_allows_breeding,
     planner_pair_bias, score_pair as score_pair_factors,
-    tracked_offspring,
+    tracked_offspring, pair_breeding_compatibility,
 )
 from room_optimizer import (
     best_breeding_room_stimulation, build_room_configs,
@@ -1917,6 +1917,31 @@ class PerfectCatPlannerView(QWidget):
 
         controls.addSpacing(12)
 
+        self._min_compat_label = QLabel(_tr(
+            "perfect_planner.min_compat", default="Min breed %"
+        ))
+        self._min_compat_label.setStyleSheet("color:#888; font-size:11px;")
+        controls.addWidget(self._min_compat_label)
+
+        self._min_compat_input = QSpinBox()
+        self._min_compat_input.setRange(0, 100)
+        self._min_compat_input.setValue(15)
+        self._min_compat_input.setSuffix("%")
+        self._min_compat_input.setFixedWidth(70)
+        self._min_compat_input.setToolTip(_tr(
+            "perfect_planner.min_compat_tooltip",
+            default=(
+                "Minimum per-roll breeding compatibility to keep a pair "
+                "(wiki formula: 0.15 × CHA × libido × lover × sexuality).  "
+                "The game auto-rejects pairs below 5%.  Default 15% filters "
+                "out weak pairs while keeping reasonable options."
+            ),
+        ))
+        self._min_compat_input.valueChanged.connect(lambda _: self._save_session_state())
+        controls.addWidget(self._min_compat_input)
+
+        controls.addSpacing(12)
+
         self._starter_label = QLabel(_tr("perfect_planner.start_pairs"))
         self._starter_label.setStyleSheet("color:#888; font-size:11px;")
         controls.addWidget(self._starter_label)
@@ -2400,6 +2425,7 @@ class PerfectCatPlannerView(QWidget):
         state.update({
             "min_stats": self._min_stats_input.text().strip(),
             "max_risk": self._max_risk_input.text().strip(),
+            "min_compat_pct": int(self._min_compat_input.value()),
             "starter_pairs": int(self._starter_pairs_input.value()),
             "stimulation": int(self._stimulation_input.value()),
             "use_sa": bool(self._deep_optimize_btn.isChecked()),
@@ -2626,6 +2652,7 @@ class PerfectCatPlannerView(QWidget):
         try:
             self._min_stats_input.setText(str(state.get("min_stats", "") or ""))
             self._max_risk_input.setText(str(state.get("max_risk", "") or ""))
+            self._min_compat_input.setValue(int(state.get("min_compat_pct", 15) or 0))
             self._starter_pairs_input.setValue(int(state.get("starter_pairs", 4) or 4))
             self._stimulation_input.setValue(int(state.get("stimulation", 50) or 50))
             self._deep_optimize_btn.setChecked(bool(state.get("use_sa", False)))
@@ -2666,6 +2693,7 @@ class PerfectCatPlannerView(QWidget):
         try:
             self._min_stats_input.setText("")
             self._max_risk_input.setText("")
+            self._min_compat_input.setValue(15)
             self._starter_pairs_input.setValue(4)
             self._stimulation_input.setValue(50)
             self._deep_optimize_btn.setChecked(False)
@@ -2738,6 +2766,8 @@ class PerfectCatPlannerView(QWidget):
                 max_risk = float(self._max_risk_input.text().strip())
         except ValueError:
             pass
+
+        min_compat = max(0.0, min(1.0, float(self._min_compat_input.value()) / 100.0))
 
         starter_pairs = int(self._starter_pairs_input.value())
         stimulation = float(self._stimulation_input.value())
@@ -2835,6 +2865,8 @@ class PerfectCatPlannerView(QWidget):
         evaluated_pairs = []
         for pair_index, (cat_a, cat_b) in enumerate(candidate_pairs):
             if not planner_pair_allows_breeding(cat_a, cat_b):
+                continue
+            if min_compat > 0.0 and pair_breeding_compatibility(cat_a, cat_b) < min_compat:
                 continue
             if avoid_lovers and (cat_a.db_key in lover_locked or cat_b.db_key in lover_locked):
                 if not is_mutual_lover_pair(cat_a, cat_b, lover_key_map):
@@ -3107,6 +3139,8 @@ class PerfectCatPlannerView(QWidget):
                     if candidate.db_key in pair_cats:
                         continue
                     if not planner_pair_allows_breeding(parent, candidate):
+                        continue
+                    if min_compat > 0.0 and pair_breeding_compatibility(parent, candidate) < min_compat:
                         continue
                     factors = _score_pair_cached(parent, candidate, stimulation)
                     if not factors.compatible or factors.risk > max_risk:

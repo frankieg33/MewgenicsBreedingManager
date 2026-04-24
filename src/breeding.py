@@ -80,13 +80,94 @@ def planner_pair_bias(a: Cat, b: Cat) -> float:
 
 
 def planner_pair_allows_breeding(a: Cat, b: Cat) -> bool:
-    """
-    Hard planner rule that follows the game's sexuality compatibility.
-
-    Same-sex pairs are allowed when their sexuality permits it, and straight
-    same-sex pairs remain blocked.
-    """
+    """Hard planner rule that follows the game's breeding compatibility."""
     return can_breed(a, b)[0]
+
+
+def _sexuality_coeff(cat: Cat) -> float:
+    """Return the cat's 0..1 sexuality coefficient (0=straight, 1=gay).
+
+    Prefer the raw float parsed from the save; fall back to the discretized
+    label if it's missing (older saves or override paths).
+    """
+    raw = getattr(cat, "sexuality_raw", None)
+    if isinstance(raw, (int, float)):
+        return max(0.0, min(1.0, float(raw)))
+    label = (getattr(cat, "sexuality", None) or "straight").lower()
+    if label == "gay":
+        return 1.0
+    if label == "bi":
+        return 0.5
+    return 0.05
+
+
+def estimate_breeding_compatibility(initiator: Cat, partner: Cat) -> float:
+    """Estimate the game's breeding compatibility score for a one-way pairing.
+
+    Implements the wiki formula:
+      compat = 0.15 * initiator_CHA * partner_libido * lover_mult * sexuality_mult
+
+    where sexuality_mult uses the partner's sexuality_coeff with
+    cos(0.5π·coeff) for opposite-sex pairs and sin(0.5π·coeff) for same-sex
+    pairs.  Unknown-gender pairs take sexuality_mult = 1.
+
+    Returns the raw compatibility (roll probability per the wiki, before the
+    sqrt(1+0.1·comfort) comfort multiplier).  Values below ~0.05 correspond
+    to pairs the game rejects outright.
+    """
+    if initiator is partner:
+        return 0.0
+    total_stats = getattr(initiator, "total_stats", None)
+    if total_stats is None:
+        # Likely a test stub or otherwise unpopulated Cat — we can't compute
+        # compatibility, so signal "unknown" by returning a high value rather
+        # than silently filtering the pair out.
+        return 1.0
+    cha = float(total_stats.get("CHA", 0) or 0)
+    libido_raw = getattr(partner, "libido", None)
+    libido = float(libido_raw) if libido_raw is not None else 1.0
+    if cha <= 0 or libido <= 0:
+        return 0.0
+
+    # Lover multiplier: partner-anchored with a default coeff of 0.25.
+    lover_coeff = 0.25
+    partner_lovers = getattr(partner, "lovers", []) or []
+    if partner_lovers:
+        if any(lv is initiator for lv in partner_lovers):
+            lover_mult = 1.0 + lover_coeff
+        else:
+            lover_mult = 1.0 - lover_coeff
+    else:
+        lover_mult = 1.0
+
+    ga = (initiator.gender or "?").strip().lower()
+    gb = (partner.gender or "?").strip().lower()
+    if ga == "?" or gb == "?":
+        sex_mult = 1.0
+    else:
+        coeff = _sexuality_coeff(partner)
+        if ga == gb:
+            sex_mult = math.sin(0.5 * math.pi * coeff)
+        else:
+            sex_mult = math.cos(0.5 * math.pi * coeff)
+
+    return 0.15 * cha * libido * lover_mult * sex_mult
+
+
+def pair_breeding_compatibility(a: Cat, b: Cat) -> float:
+    """Symmetric compatibility estimate for a pair.
+
+    Returns the *worst-direction* compat so the planner filter matches
+    "this pair reliably produces kittens regardless of who initiates".
+    The game picks a random initiator each day and same-sex pairs see
+    wildly asymmetric sex_mult values when the two cats have different
+    sexuality coefficients — using max would let those pairs slip past
+    a floor even though half of initiations would fail.
+    """
+    return min(
+        estimate_breeding_compatibility(a, b),
+        estimate_breeding_compatibility(b, a),
+    )
 
 
 def planner_inbreeding_penalty(a: Cat, b: Cat) -> float:

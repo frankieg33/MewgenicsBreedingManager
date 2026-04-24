@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import (
     Qt, QEvent, QModelIndex, QItemSelection, QItemSelectionModel,
-    QFileSystemWatcher, QThread, QTimer, QSize, QByteArray,
+    QFileSystemWatcher, QThread, QTimer, QSize, QByteArray, Signal,
 )
 from PySide6.QtGui import (
     QColor, QBrush, QAction, QActionGroup, QFont, QKeySequence,
@@ -141,6 +141,7 @@ class MainWindow(QMainWindow):
     # After this, we stop and wait for a fresh fileChanged event (or manual
     # reload) rather than spinning on a permanently-broken save.
     _SAVE_LOAD_RETRY_CAP = 3
+    startup_save_load_finished = Signal()
 
     @staticmethod
     def _set_bulk_toggle_label(btn: QPushButton, label: str, enabled: bool):
@@ -1188,7 +1189,19 @@ class MainWindow(QMainWindow):
                 planner_note = (
                     " Donation candidates are cats missing selected mutation/ability traits and still under the stat floor."
                 )
-        if adaptive:
+        from mewgenics.utils.thresholds import (
+            SCORE_SOURCE, DETAILED_EXCEPTIONAL_THRESHOLD, DETAILED_DONATION_THRESHOLD,
+            _detailed_scores_ready,
+        )
+        if SCORE_SOURCE == "detailed" and _detailed_scores_ready():
+            self._btn_exceptional.setToolTip(
+                f"Exceptional breeders: Detailed Scoring total >= {DETAILED_EXCEPTIONAL_THRESHOLD:+.1f}."
+            )
+            self._btn_donation.setToolTip(
+                "Donation candidates: Detailed Scoring total "
+                f"<= {DETAILED_DONATION_THRESHOLD:+.1f}, and/or high aggression." + planner_note
+            )
+        elif adaptive:
             self._btn_exceptional.setToolTip(
                 "Exceptional breeders follow the living-cat average curve: "
                 f"base {base_exceptional}, reference avg {summary['adaptive_reference_avg_sum']:.1f}, "
@@ -1231,6 +1244,14 @@ class MainWindow(QMainWindow):
         self._refresh_filter_button_counts()
         self._refresh_bulk_view_buttons(room_key)
         self._update_count()
+
+    def _on_detailed_scores_changed(self):
+        """Detailed Scoring finished a run — refresh donation/exceptional UI
+        when the user has the Detailed score source active."""
+        from mewgenics.utils.thresholds import SCORE_SOURCE
+        if SCORE_SOURCE != "detailed":
+            return
+        self._refresh_threshold_sensitive_ui()
 
     def _sync_room_config_views(self):
         if self._room_optimizer_view is None or self._perfect_planner_view is None:
@@ -2264,6 +2285,7 @@ class MainWindow(QMainWindow):
         )
         self._breed_priority_view.hide()
         self._content_vb.addWidget(self._breed_priority_view, 1)
+        self._breed_priority_view.detailed_scores_updated.connect(self._on_detailed_scores_changed)
         self._push_cats_to_view_if_loaded("breed_priority", self._breed_priority_view)
 
     def _build_all_views(self):
@@ -3601,6 +3623,7 @@ class MainWindow(QMainWindow):
             return  # superseded — a newer load is already running
         self._save_load_worker = None
         self._loading_overlay.hide()
+        self.startup_save_load_finished.emit()
         if is_transient and self._save_load_retries < self._SAVE_LOAD_RETRY_CAP:
             self._save_load_retries += 1
             self.statusBar().showMessage(
@@ -3721,6 +3744,7 @@ class MainWindow(QMainWindow):
         self._save_load_retries = 0  # success resets the self-heal counter
         # Dismiss overlay immediately — UI work below is fast (model.load is O(n), no ancestry)
         self._loading_overlay.hide()
+        self.startup_save_load_finished.emit()
         self._save_view_disabled = True
         try:
             cats = result["cats"]
@@ -3740,6 +3764,11 @@ class MainWindow(QMainWindow):
 
             self._cats = cats
             self._bump_cats_generation()
+            # Stale detailed-score cache is keyed by id(cat) from the previous
+            # save — clear it so we fall back to base-sum until Detailed Scoring
+            # reruns against the new objects.
+            from mewgenics.utils.thresholds import _set_detailed_scores
+            _set_detailed_scores({})
             self._furniture = furniture
             self._furniture_by_room = furniture_by_room
             self._furniture_data = dict(_FURNITURE_DATA)
@@ -4017,17 +4046,22 @@ class MainWindow(QMainWindow):
         base_stat_headers  = ["Base " + s for s in STAT_NAMES]
         actual_stat_headers = ["Actual " + s for s in STAT_NAMES]
         headers = (
-            ["Name", "Status", "Room", "Age", "Gender", "Sexuality", "Generation"]
+            ["Name", "Status", "Room", "Age", "Gender", "Sexuality", "Generation", "Class"]
             + base_stat_headers + ["Base Sum"]
             + actual_stat_headers + ["Actual Sum"]
-            + ["Abilities", "Mutations", "Aggression", "Libido", "Inbreeding",
-               "Pinned", "Blacklisted", "Must Breed", "Parent A", "Parent B"]
+            + ["Abilities", "Passive Abilities", "Mutations", "Disorders", "Defects",
+               "Aggression", "Libido", "Inbreeding",
+               "Pinned", "Blacklisted", "Must Breed", "Tags",
+               "Lovers", "Haters", "Parent A", "Parent B"]
         )
 
         def _trait(val, field):
             if val is None:
                 return ""
             return _trait_label_from_value(field, val)
+
+        def _names(cats):
+            return "; ".join(c.name for c in (cats or []) if c is not None)
 
         rows = []
         for cat in self._cats:
@@ -4042,18 +4076,25 @@ class MainWindow(QMainWindow):
                     cat.gender or "",
                     cat.sexuality or "",
                     str(cat.generation),
+                    getattr(cat, "cat_class", "") or "",
                 ]
                 + [str(v) for v in base_vals] + [str(sum(base_vals))]
                 + [str(v) for v in actual_vals] + [str(sum(actual_vals))]
                 + [
                     "; ".join(cat.abilities or []),
+                    "; ".join(getattr(cat, "passive_abilities", []) or []),
                     "; ".join(cat.mutations or []),
+                    "; ".join(getattr(cat, "disorders", []) or []),
+                    "; ".join(getattr(cat, "defects", []) or []),
                     _trait(cat.aggression, "aggression"),
                     _trait(cat.libido, "libido"),
                     _trait(cat.inbredness, "inbredness"),
                     "Yes" if getattr(cat, "is_pinned", False) else "No",
                     "Yes" if getattr(cat, "is_blacklisted", False) else "No",
                     "Yes" if getattr(cat, "must_breed", False) else "No",
+                    "; ".join(_cat_tags(cat) or []),
+                    _names(getattr(cat, "lovers", [])),
+                    _names(getattr(cat, "haters", [])),
                     cat.parent_a.name if cat.parent_a else "",
                     cat.parent_b.name if cat.parent_b else "",
                 ]

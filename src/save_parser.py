@@ -2356,12 +2356,14 @@ def get_grandparents(cat: Cat) -> list[Cat]:
 def can_breed(a: Cat, b: Cat) -> tuple[bool, str]:
     """Return (ok, reason). reason is non-empty only when ok is False.
 
-    The game uses a continuous sexuality_mult rather than hard-blocking:
-      - Male-female: sexuality_mult = cos(0.5*pi * sexuality_coeff)
-      - Same-sex:    sexuality_mult = sin(0.5*pi * sexuality_coeff)
-    Even 'straight' cats (coeff ~0.05) have a small nonzero sin value, so
-    same-sex breeding is technically possible with enough charisma.  We still
-    flag near-zero compatibility as a *warning* rather than a hard block.
+    Game rule (per wiki): compatibility = 0.15 * charisma * libido * lover_mult * sexuality_mult
+    where sexuality_mult = cos(0.5*pi*sexuality_coeff) for opposite-sex pairs
+    and sin(0.5*pi*sexuality_coeff) for same-sex pairs.  A breeding attempt
+    succeeds when compatibility > 0.05.
+
+    So a "straight" cat (coeff ~0) has sin ~0 → same-sex compatibility ~0 →
+    hard block.  A bi/gay cat has non-trivial sin and *can* produce offspring
+    with a same-sex partner.  Symmetric rule for gay+gay opposite-sex.
     """
     if a is b:
         return False, "Cannot pair a cat with itself"

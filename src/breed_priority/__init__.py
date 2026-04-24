@@ -214,6 +214,8 @@ class BreedPriorityView(QWidget):
         ability_tip: Callable(str) -> str; returns tooltip text for a trait.
     """
 
+    detailed_scores_updated = Signal()
+
     def __init__(self, ratings_path: str, stat_names: list, room_display: dict,
                  mutation_display_name, ability_tip):
         super().__init__()
@@ -2418,6 +2420,7 @@ class BreedPriorityView(QWidget):
                 ]
                 _stat_col_ranks[_sn] = ChipColors.stat_col_ranks(_col_vals) if _col_vals else {}
 
+        _detailed_scores_out: dict[int, float] = {}
         for row, cat in enumerate(alive):
             result = results[id(cat)]
             scope_gene_risk = result.scope_gene_risk
@@ -2804,6 +2807,7 @@ class BreedPriorityView(QWidget):
                 )
                 _cw_delta_total = sum(d for matched, d in _cw_matches if matched)
             _adjusted_total = result.total + _cw_delta_total
+            _detailed_scores_out[id(cat)] = float(_adjusted_total)
 
             # ── Total score ──
             score_item = _NumericSortItem(f"{_adjusted_total:+.1f}")
@@ -2882,6 +2886,15 @@ class BreedPriorityView(QWidget):
                     item.setToolTip(tooltip)
             self._score_table.setRowHeight(row, 36 if self._display_mode == "both" else 22)
 
+        try:
+            from mewgenics.utils.thresholds import _set_detailed_scores
+            _set_detailed_scores(_detailed_scores_out)
+        except Exception:
+            pass
+        try:
+            self.detailed_scores_updated.emit()
+        except Exception:
+            pass
         self._finalize_recompute(alive, results, _children_in_scope, _restore_name)
 
     def _finalize_recompute(self, alive, results, children_in_scope_fn, restore_name):
