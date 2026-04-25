@@ -918,6 +918,10 @@ class OnboardingDialog(QDialog):
         self.setModal(True)
         self.setWindowTitle("Getting Started")
         self.setMinimumWidth(680)
+        # Default height tall enough that the longest page (Detailed Scoring)
+        # fits without an internal scrollbar on a 1080p screen.
+        self.setMinimumHeight(640)
+        self.resize(760, 720)
         self.setStyleSheet(
             "QDialog { background:#0d0d1c; }"
             "QLabel { color:#ddd; }"
